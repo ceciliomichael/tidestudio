@@ -1,21 +1,37 @@
-import { Play, Server, Square } from "lucide-react";
+import {
+  Copy,
+  FileJson2,
+  Plus,
+  Settings2,
+  Square,
+} from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { IconButton } from "../../components/ui/IconButton";
-import { SectionHeader } from "../../components/ui/SectionHeader";
+import { Switch } from "../../components/ui/Switch";
 import type {
-  ModelInfo,
-  ServerConfig,
-  ServerStatus,
-} from "../../lib/tauri";
+  ModelConfig,
+  ServerSettings,
+} from "../../lib/config";
+import type { ServerStatus } from "../../lib/tauri";
+import type { CatalogModel } from "../models/types";
+import { LoadModelDialog } from "./LoadModelDialog";
+import { ServerLogsPanel } from "./ServerLogsPanel";
+import { ServerSettingsDialog } from "./ServerSettingsDialog";
+import { SupportedEndpointsPanel } from "./SupportedEndpointsPanel";
+import { useResizableLogsPanel } from "./useResizableLogsPanel";
 
 type Props = {
-  models: ModelInfo[];
-  configs: Record<string, ServerConfig>;
   servers: ServerStatus[];
+  logs: string[];
   selectedPort: number | null;
+  allModels: CatalogModel[];
+  configs: Record<string, ModelConfig>;
+  serverSettings: ServerSettings;
   onSelectServer: (port: number) => void;
-  onStart: (config: ServerConfig) => Promise<void>;
   onStop: (port: number) => Promise<void>;
+  onLoadModel: (model: CatalogModel) => Promise<void>;
+  onServerSettingsChange: (settings: ServerSettings) => void;
 };
 
 function fileName(path: string) {
@@ -23,131 +39,224 @@ function fileName(path: string) {
 }
 
 export function ServerDashboard({
-  models,
-  configs,
   servers,
+  logs,
   selectedPort,
+  allModels,
+  configs,
+  serverSettings,
   onSelectServer,
-  onStart,
   onStop,
+  onLoadModel,
+  onServerSettingsChange,
 }: Props) {
-  const runningPorts = new Set(
-    servers.filter((server) => server.running).map((server) => server.port),
+  const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const {
+    containerRef,
+    collapsed,
+    panelHeight,
+    beginResize,
+    toggleCollapsed,
+  } = useResizableLogsPanel();
+
+  const runningServers = servers.filter((server) => server.running);
+  const selectedServer =
+    runningServers.find((server) => server.port === selectedPort) ?? null;
+  const loadedModels = allModels.filter((model) =>
+    runningServers.some((server) => server.modelPath === model.path),
   );
+  const reachableEndpoint = selectedServer
+    ? "http://localhost:" + selectedServer.port
+    : "http://localhost:" + serverSettings.port;
+
+  function copyEndpoint() {
+    void navigator.clipboard.writeText(reachableEndpoint);
+  }
+
+  async function ejectModel(modelId: string) {
+    const model = allModels.find((candidate) => candidate.id === modelId);
+    if (!model) {
+      return;
+    }
+
+    const server = runningServers.find(
+      (candidate) => candidate.modelPath === model.path,
+    );
+    if (server) {
+      await onStop(server.port);
+    }
+  }
 
   return (
-    <section className="server-dashboard">
-      <SectionHeader
-        eyebrow="Server"
-        title="Managed servers"
-        description="Launch configured models and manage every server started by TideStudio."
-        icon={Server}
-      />
+    <section
+      className="server-dashboard server-dashboard--runtime"
+      ref={containerRef}
+    >
+      <div className="server-toolbar-shell">
+        <div className="server-toolbar">
+          <div className="server-toolbar__left">
+            <div className="server-toolbar__status">
+              <span>Status: {runningServers.length > 0 ? "Running" : "Stopped"}</span>
+              <Switch
+                className="tide-switch"
+                checked={runningServers.length > 0}
+                disabled
+                label="Server status"
+                onChange={() => undefined}
+              />
+            </div>
 
-      <section className="server-section">
-        <div className="server-section__heading">
-          <div>
-            <h3>Launch a model</h3>
-            <p>Uses the configuration set from the Models page.</p>
+            <Button
+              className="server-toolbar__button"
+              variant="secondary"
+              size="compact"
+              onClick={() => setSettingsDialogOpen(true)}
+            >
+              <Settings2 size={13} strokeWidth={2} aria-hidden="true" />
+              Server Settings
+            </Button>
+
+            <Button
+              className="server-toolbar__button"
+              variant="secondary"
+              size="compact"
+              disabled
+            >
+              <FileJson2 size={13} strokeWidth={2} aria-hidden="true" />
+              mcp.json
+            </Button>
+          </div>
+
+          <div className="server-toolbar__right">
+            <span className="server-toolbar__reachable">Reachable at:</span>
+            <code className="server-toolbar__endpoint">{reachableEndpoint}</code>
+            <IconButton
+              className="server-toolbar__copy"
+              icon={Copy}
+              label="Copy server endpoint"
+              size={14}
+              onClick={copyEndpoint}
+            />
+            <Button
+              variant="primary"
+              size="compact"
+              disabled={allModels.length === 0}
+              onClick={() => setLoadDialogOpen(true)}
+            >
+              <Plus size={13} strokeWidth={2} aria-hidden="true" />
+              Load Model
+            </Button>
           </div>
         </div>
+      </div>
 
-        {models.length === 0 ? (
-          <div className="server-empty">
-            Add a GGUF model before starting a server.
-          </div>
-        ) : (
-          <div className="launch-list">
-            {models.map((model) => {
-              const config = configs[model.path];
-              const isRunning = config ? runningPorts.has(config.port) : false;
+      <div className="running-model-region">
+        <div className="running-model-region__heading">
+          <h3>Loaded Models</h3>
+          <span>{runningServers.length}</span>
+        </div>
+
+        <div className="running-model-stack">
+          {runningServers.length === 0 ? (
+            <div className="server-empty-state">
+              No models are currently loaded.
+              {allModels.length > 0
+                ? " Use Load Model to start a local GGUF."
+                : " Download or add a GGUF model first."}
+            </div>
+          ) : (
+            runningServers.map((server) => {
+              const model = allModels.find(
+                (candidate) => candidate.path === server.modelPath,
+              );
+              const config = configs[server.modelPath];
 
               return (
-                <div className="launch-row" key={model.path}>
-                  <div className="launch-row__copy">
-                    <strong>{model.name}</strong>
-                    <span>
-                      {config
-                        ? `Port ${config.port} · Context ${config.contextSize ?? "default"}`
-                        : "Configuration unavailable"}
-                    </span>
-                  </div>
-
-                  <Button
-                    variant={isRunning ? "secondary" : "primary"}
-                    size="compact"
-                    disabled={!config || isRunning}
-                    onClick={() => config && void onStart(config)}
+                <article
+                  className={
+                    selectedPort === server.port
+                      ? "running-model-card is-selected"
+                      : "running-model-card"
+                  }
+                  key={server.port}
+                >
+                  <button
+                    className="running-model-card__select"
+                    type="button"
+                    onClick={() => onSelectServer(server.port)}
                   >
-                    <Play size={13} strokeWidth={2} aria-hidden="true" />
-                    {isRunning ? "Running" : "Start"}
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                    <span
+                      className="server-state-dot"
+                      data-running="true"
+                      aria-hidden="true"
+                    />
+                    <span className="running-model-card__copy">
+                      <strong>{model?.name ?? fileName(server.modelPath)}</strong>
+                      <span>
+                        Context {config?.contextSize ?? "Default"}
+                        {model
+                          ? " · " + model.quantization + " · " + model.category
+                          : ""}
+                        {" · localhost:" + server.port + " · PID " + server.pid}
+                      </span>
+                    </span>
+                  </button>
 
-      <section className="server-section">
-        <div className="server-section__heading">
-          <div>
-            <h3>Active registry</h3>
-            <p>Processes currently tracked by TideStudio.</p>
-          </div>
-          <span className="server-count">{servers.length}</span>
+                  <div className="running-model-card__actions">
+                    <span className="running-model-card__state">Running</span>
+                    <Button
+                      variant="danger"
+                      size="compact"
+                      onClick={() => void onStop(server.port)}
+                    >
+                      <Square size={12} strokeWidth={2} aria-hidden="true" />
+                      Stop
+                    </Button>
+                  </div>
+                </article>
+              );
+            })
+          )}
         </div>
 
-        {servers.length === 0 ? (
-          <div className="server-empty">
-            No managed servers yet.
-          </div>
-        ) : (
-          <div className="managed-server-list">
-            {servers.map((server) => (
-              <div
-                className={
-                  selectedPort === server.port
-                    ? "managed-server-row is-selected"
-                    : "managed-server-row"
-                }
-                key={server.port}
-              >
-                <button
-                  className="managed-server-row__select"
-                  type="button"
-                  onClick={() => onSelectServer(server.port)}
-                >
-                  <div
-                    className="server-state-dot"
-                    data-running={server.running}
-                    aria-hidden="true"
-                  />
-                  <div className="managed-server-row__copy">
-                    <strong>{fileName(server.modelPath)}</strong>
-                    <span>
-                      localhost:{server.port} · PID {server.pid} · {server.backend}
-                    </span>
-                  </div>
-                  <span className="managed-server-row__state">
-                    {server.running ? "Running" : "Stopped"}
-                  </span>
-                </button>
+        <SupportedEndpointsPanel />
+      </div>
 
-                {server.running ? (
-                  <IconButton
-                    className="managed-server-stop"
-                    icon={Square}
-                    label={`Stop server on port ${server.port}`}
-                    size={13}
-                    onClick={() => void onStop(server.port)}
-                  />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {!collapsed ? (
+        <div
+          className="server-logs-resizer"
+          role="separator"
+          aria-label="Resize API logs panel"
+          aria-orientation="horizontal"
+          onPointerDown={beginResize}
+        />
+      ) : null}
+
+      <ServerLogsPanel
+        server={selectedServer}
+        logs={logs}
+        collapsed={collapsed}
+        height={panelHeight}
+        onToggleCollapsed={toggleCollapsed}
+      />
+
+      <LoadModelDialog
+        open={loadDialogOpen}
+        allModels={allModels}
+        loadedModels={loadedModels}
+        configs={configs}
+        onClose={() => setLoadDialogOpen(false)}
+        onLoad={(model) => void onLoadModel(model)}
+        onEject={(modelId) => void ejectModel(modelId)}
+      />
+
+      <ServerSettingsDialog
+        open={settingsDialogOpen}
+        settings={serverSettings}
+        onClose={() => setSettingsDialogOpen(false)}
+        onChange={onServerSettingsChange}
+      />
     </section>
   );
 }

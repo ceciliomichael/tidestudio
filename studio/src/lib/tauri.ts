@@ -1,20 +1,30 @@
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  DownloadedModel,
+  HuggingFaceModelSummary,
+  HuggingFaceRepoDetails,
+} from "../features/downloads/types";
+import type { ModelConfig } from "./config";
 
 export type ModelInfo = {
   name: string;
   path: string;
   sizeBytes: number;
+  modifiedMs: number | null;
+  publisher: string;
+  category: "LLM" | "Embedding" | "Drafter";
+  architecture: string | null;
+  parameters: string | null;
+  quantization: string | null;
+  chatTemplate: string | null;
+  supportsReasoning: boolean;
 };
 
-export type ServerConfig = {
+export type ServerConfig = Omit<ModelConfig, "systemPrompt"> & {
   modelPath: string;
   host: string;
   port: number;
-  contextSize: number | null;
-  gpuLayers: number | null;
-  temperature: number | null;
-  flashAttention: boolean;
-  extraArgs: string[];
+  apiKey: string;
 };
 
 export type ServerStatus = {
@@ -40,3 +50,28 @@ export const serverStatus = (port: number) =>
 
 export const serverLogs = (port: number) =>
   invoke<string[]>("server_logs", { port });
+
+export const getUiPreference = (key: string) =>
+  invoke<string | null>("get_ui_preference", { key });
+
+export const setUiPreference = (key: string, value: string) =>
+  invoke<void>("set_ui_preference", { key, value });
+
+export const searchHuggingFaceModels = (query: string) =>
+  invoke<HuggingFaceModelSummary[]>("search_huggingface_models", { query });
+
+export const huggingFaceModelFiles = (repoId: string) =>
+  invoke<HuggingFaceRepoDetails>("huggingface_model_files", { repoId });
+
+export const downloadHuggingFaceFile = (
+  repoId: string,
+  filename: string,
+  tags: string[],
+  pipelineTag: string | null,
+) =>
+  invoke<DownloadedModel>("download_huggingface_file", {
+    repoId,
+    filename,
+    tags,
+    pipelineTag,
+  });

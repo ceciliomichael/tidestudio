@@ -21,7 +21,12 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
+            commands::downloads::search_huggingface_models,
+            commands::downloads::huggingface_model_files,
+            commands::downloads::download_huggingface_file,
             commands::models::list_models,
+            commands::preferences::get_ui_preference,
+            commands::preferences::set_ui_preference,
             commands::server::start_server,
             commands::server::stop_server,
             commands::server::list_servers,

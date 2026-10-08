@@ -1,3 +1,3 @@
 mod server_config;
 
-pub use server_config::ServerConfig;
+pub use server_config::{ServerConfig, SpeculativeMode};

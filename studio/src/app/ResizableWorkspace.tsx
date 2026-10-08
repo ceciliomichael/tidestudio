@@ -1,30 +1,57 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useResizablePanels } from "./useResizablePanels";
+import {
+  useResizablePanels,
+  type WorkspaceLayoutMode,
+} from "./useResizablePanels";
 
 type Props = {
   left: ReactNode;
   main: ReactNode;
   right: ReactNode;
+  layoutMode?: WorkspaceLayoutMode;
 };
 
-export function ResizableWorkspace({ left, main, right }: Props) {
+export function ResizableWorkspace({
+  left,
+  main,
+  right,
+  layoutMode = "standard",
+}: Props) {
   const {
     containerRef,
     leftWidth,
     rightWidth,
     beginLeftResize,
     beginRightResize,
-  } = useResizablePanels();
+  } = useResizablePanels(layoutMode);
+
+  const fallback =
+    layoutMode === "modelSearchBrowse"
+      ? "20% 0 minmax(0, 1fr) 0 0"
+      : layoutMode === "modelSearchDetail"
+        ? "20% 0 minmax(360px, 42%) 0 minmax(480px, 58%)"
+        : "20% 0 minmax(0, 1fr) 0 20%";
 
   const style: CSSProperties = {
     gridTemplateColumns:
       leftWidth === null || rightWidth === null
-        ? "20% 0 minmax(0, 1fr) 0 20%"
+        ? fallback
         : `${leftWidth}px 0 minmax(0, 1fr) 0 ${rightWidth}px`,
   };
 
   return (
-    <div className="workspace" ref={containerRef} style={style}>
+    <div
+      className={[
+        "workspace",
+        layoutMode === "modelSearchDetail"
+          ? "workspace--model-search-detail"
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      ref={containerRef}
+      style={style}
+    >
       {left}
       <div
         className="panel-resizer"
@@ -34,13 +61,15 @@ export function ResizableWorkspace({ left, main, right }: Props) {
         onPointerDown={beginLeftResize}
       />
       {main}
-      <div
-        className="panel-resizer"
-        role="separator"
-        aria-label="Resize configuration panel"
-        aria-orientation="vertical"
-        onPointerDown={beginRightResize}
-      />
+      {layoutMode === "modelSearchBrowse" ? null : (
+        <div
+          className="panel-resizer"
+          role="separator"
+          aria-label="Resize configuration panel"
+          aria-orientation="vertical"
+          onPointerDown={beginRightResize}
+        />
+      )}
       {right}
     </div>
   );

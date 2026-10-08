@@ -1,12 +1,12 @@
 import {
-  Download,
   LibraryBig,
+  Search,
   Server,
   Settings,
   SlidersHorizontal,
 } from "lucide-react";
 
-export type ActivePage = "server" | "models";
+export type ActivePage = "server" | "models" | "downloads";
 
 type Props = {
   activePage: ActivePage;
@@ -27,10 +27,10 @@ const items = [
     available: true,
   },
   {
-    id: null,
-    label: "Downloads",
-    icon: Download,
-    available: false,
+    id: "downloads" as const,
+    label: "Model Search",
+    icon: Search,
+    available: true,
   },
   {
     id: null,

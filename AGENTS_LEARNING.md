@@ -7,3 +7,25 @@
 - Use a consistent icon library for interface icons. Do not use emoji as UI icons.
 - Structure the TideStudio desktop workspace around an approximately 20/60/20 resizable layout: left navigation, center primary content, right contextual model/server configuration.
 - Keep an `InferenceBackend` architecture boundary so llama.cpp is one backend implementation rather than being coupled directly to the server registry.
+- For the Models right inspector, use an LM-Studio-like Info / Load / Inference hierarchy with TideCode-style segmented controls, while keeping TideStudio's own light visual system.
+- Keep Models settings model-specific. Server/network settings such as port belong on Server. Models should support llama.cpp model/inference features such as MTP and speculative drafting when the bundled runtime supports them.
+- The Models Inference tab should expose practical LM-Studio-like prompt, reasoning, and sampling defaults. Only show reasoning controls for models marked reasoning-capable, and do not fake unsupported llama.cpp launch flags.
+- Prompt Template belongs at the bottom of Models > Load, not Inference. Leave it empty to use the GGUF-embedded chat template when available.
+- Prompt Template should use a multiline field. When GGUF metadata parsing exists, prefill/surface the embedded `tokenizer.chat_template` and allow the user to override it.
+- Server workspace should expose llama.cpp server capabilities directly: supported endpoint families in the center workspace and startup/restart settings such as port and API-key authentication in the right inspector.
+- Supported Endpoints should default to collapsed and persist its collapsed/open state in SQLite.
+- Server-wide settings should open from the Server Settings toolbar action, not occupy the right inspector. The Server right inspector should stay model-focused and show the selected loaded model's Info / Load / Inference tabs.
+- Load Model on Server should open a model-manager dialog with Currently Loaded and Your Models sections rather than navigating to the Models page.
+- Downloads should be a Hugging Face GGUF browser with real repository search, file-level downloads, progress, and post-download capability inspection.
+- Downloads should fill the center panel, with its search/header area fixed and only the repository list vertically scrollable.
+- The Hugging Face workspace is visibly named Model Search. Search is debounced without a submit button, and download progress belongs in a global header download popover rather than inside Model Search.
+- Model Search should use an LM Studio-like two-panel information hierarchy: search/results in the center and detailed repository stats, download options, capabilities, and README in the separate right inspector.
+- Model Search Download Options should present GGUF quantizations in a dropdown with one Download button, and separate vision projector files in their own dropdown.
+- Model Search browse mode should collapse the right pane until a repository is clicked. Selecting one should expand the detail pane to a majority of the usable workspace; closing the detail pane should restore the wide list view.
+- Model Search file buttons should show live percentage while downloading. Global download activity should throttle visible updates and keep speed/byte metrics stable and readable.
+- Real GGUF models should prefill Load > Prompt Template from embedded `tokenizer.chat_template`; unchanged embedded templates are model defaults, not explicit overrides.
+- Models and Server should not use preview/mock model data. Both should derive from real discovered GGUF files and real managed llama-server processes.
+- Capability detection should prefer GGUF metadata and embedded chat-template evidence, then use repository/model heuristics with explicit confidence rather than claiming unsupported certainty.
+- MTP support is a capability, not a model category. A normal MTP-capable target model must remain an LLM; reserve Drafter classification for explicit draft/EAGLE-style companion models.
+- Future TideStudio public API routing should use a Go gateway in front of llama.cpp workers, with one public port and OpenAI/Anthropic compatibility; Rust/Tauri remains the desktop/process integration layer.
+- TideStudio should use a comfortable desktop UI scale. Avoid tiny 8-10px text for important labels and metadata; prefer roughly 12-14px readable text and 40px-class controls while preserving the existing panel layout.
