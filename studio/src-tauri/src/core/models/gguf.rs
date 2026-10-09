@@ -22,6 +22,9 @@ pub struct ModelCapabilities {
     pub category: String,
     pub mtp: CapabilitySignal,
     pub reasoning: CapabilitySignal,
+    pub thinking_toggle: CapabilitySignal,
+    pub reasoning_effort: CapabilitySignal,
+    pub reasoning_preserve: CapabilitySignal,
     pub vision: CapabilitySignal,
     pub tools: CapabilitySignal,
 }
@@ -33,6 +36,7 @@ pub struct GgufInspection {
     pub model_name: Option<String>,
     pub parameter_size: Option<String>,
     pub context_length: Option<u64>,
+    pub pooling_type: Option<String>,
     pub chat_template: Option<String>,
     pub capabilities: ModelCapabilities,
 }
@@ -70,6 +74,7 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
     let mut parameter_count = None;
     let mut context_length = None;
     let mut expert_count = None;
+    let mut pooling_type = None;
     let mut chat_template = None;
     let mut capability_metadata = Vec::new();
 
@@ -112,6 +117,11 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
             _ if lower_key.ends_with(".expert_count") => {
                 if expert_count.is_none() {
                     expert_count = value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".pooling_type") => {
+                if pooling_type.is_none() {
+                    pooling_type = value.as_deref().and_then(normalize_pooling_type);
                 }
             }
             _ if lower_key.contains("chat_template") && chat_template.is_none() => {
@@ -169,9 +179,22 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         model_name,
         parameter_size,
         context_length,
+        pooling_type,
         chat_template,
         capabilities,
     })
+}
+
+fn normalize_pooling_type(value: &str) -> Option<String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "-1" | "unspecified" => None,
+        "0" | "none" => Some("none".to_string()),
+        "1" | "mean" => Some("mean".to_string()),
+        "2" | "cls" => Some("cls".to_string()),
+        "3" | "last" | "lasttoken" => Some("last".to_string()),
+        "4" | "rank" => Some("rank".to_string()),
+        _ => None,
+    }
 }
 
 struct TensorParameterCounts {
@@ -384,6 +407,68 @@ fn infer_capabilities(
             ),
         ]),
     );
+    let thinking_toggle_template = template.contains("enable_thinking");
+    let thinking_toggle_metadata = metadata_haystack.contains("enable_thinking");
+    let thinking_toggle = capability_signal(
+        thinking_toggle_template || thinking_toggle_metadata,
+        "high",
+        evidence([
+            (
+                thinking_toggle_template,
+                "embedded chat template exposes enable_thinking".to_string(),
+            ),
+            (
+                thinking_toggle_metadata,
+                "GGUF metadata exposes enable_thinking".to_string(),
+            ),
+        ]),
+    );
+    let reasoning_effort_template = template.contains("reasoning_effort");
+    let reasoning_effort_metadata = metadata_haystack.contains("reasoning_effort");
+    let reasoning_effort_name = name_haystack.contains("gpt-oss")
+        || name_haystack.contains("stepfun")
+        || name_haystack.contains("step-3")
+        || name_haystack.contains("deepseek-v4");
+    let reasoning_effort = capability_signal(
+        reasoning_effort_template || reasoning_effort_metadata || reasoning_effort_name,
+        if reasoning_effort_template || reasoning_effort_metadata {
+            "high"
+        } else {
+            "medium"
+        },
+        evidence([
+            (
+                reasoning_effort_template,
+                "embedded chat template exposes reasoning_effort".to_string(),
+            ),
+            (
+                reasoning_effort_metadata,
+                "GGUF metadata exposes reasoning_effort".to_string(),
+            ),
+            (
+                reasoning_effort_name,
+                "model family is known to use reasoning-effort controls".to_string(),
+            ),
+        ]),
+    );
+    let reasoning_preserve_template =
+        template.contains("preserve_reasoning") || template.contains("preserve_thinking");
+    let reasoning_preserve_metadata = metadata_haystack.contains("preserve_reasoning")
+        || metadata_haystack.contains("preserve_thinking");
+    let reasoning_preserve = capability_signal(
+        reasoning_preserve_template || reasoning_preserve_metadata,
+        "high",
+        evidence([
+            (
+                reasoning_preserve_template,
+                "embedded chat template exposes reasoning preservation".to_string(),
+            ),
+            (
+                reasoning_preserve_metadata,
+                "GGUF metadata exposes reasoning preservation".to_string(),
+            ),
+        ]),
+    );
 
     let vision_metadata = metadata_haystack.contains("vision")
         || metadata_haystack.contains("projector")
@@ -451,6 +536,9 @@ fn infer_capabilities(
         category,
         mtp,
         reasoning,
+        thinking_toggle,
+        reasoning_effort,
+        reasoning_preserve,
         vision,
         tools,
     }
@@ -802,6 +890,43 @@ mod tests {
         .expect("inspect laya gguf");
 
         assert_eq!(inspection.capabilities.category, "DECISION");
+
+        fs::remove_file(path).expect("remove test gguf");
+    }
+
+    #[test]
+    fn reads_embedding_pooling_metadata() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tidestudio-pooling-{unique}.gguf"));
+        let mut file = File::create(&path).expect("create test gguf");
+
+        file.write_all(b"GGUF").expect("magic");
+        file.write_all(&3_u32.to_le_bytes()).expect("version");
+        file.write_all(&0_u64.to_le_bytes()).expect("tensor count");
+        file.write_all(&3_u64.to_le_bytes())
+            .expect("metadata count");
+
+        write_string_metadata(&mut file, "general.architecture", "bert");
+        write_string_metadata(&mut file, "general.name", "Example Embedding");
+        write_u32_metadata(&mut file, "bert.pooling_type", 3);
+        drop(file);
+
+        let inspection = inspect_gguf(
+            &path,
+            CapabilityHints {
+                repo_id: "example/embedding",
+                filename: "example-embedding-f16.gguf",
+                tags: &["feature-extraction".to_string()],
+                pipeline_tag: Some("feature-extraction"),
+            },
+        )
+        .expect("inspect embedding gguf");
+
+        assert_eq!(inspection.capabilities.category, "Embedding");
+        assert_eq!(inspection.pooling_type.as_deref(), Some("last"));
 
         fs::remove_file(path).expect("remove test gguf");
     }

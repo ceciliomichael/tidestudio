@@ -35,7 +35,7 @@
 - Disable the WebView/browser native context menu across the desktop app. Model-specific actions belong in TideStudio's own Actions menu.
 - Model deletion must be limited to managed GGUFs and remove the sibling TideStudio settings sidecar with the model. If the GGUF is currently loaded, stop/unregister its worker automatically before deleting it.
 - New MTP-capable GGUFs default to MTP speculative mode unless a saved per-model sidecar overrides that default.
-- Models classified as Embedding should default to llama.cpp `--embeddings` mode.
+- Models classified as Embedding should launch in llama.cpp `--embeddings` mode automatically and expose pooling instead of chat-generation controls. GGUF rank pooling means reranking, not ordinary dense embeddings.
 - TideStudio public API routing uses the Go-based API gateway under `studio/api-gateway/` in front of private loopback llama.cpp workers, with one public port and OpenAI, Anthropic, and TypeSafe System One compatibility; Rust/Tauri remains the desktop/process integration layer.
 - TideStudio should use a comfortable desktop UI scale. Avoid tiny 8-10px text for important labels and metadata; prefer roughly 12-14px readable text, 34-40px controls, flat list rows, and restrained separators.
 - Keep loaded-model entries as a two-row component: state/chevron on the first row, model identity/capabilities and RAM/Stop actions on the second row.
@@ -49,6 +49,10 @@
 - Persist each GGUF's Load and Inference configuration beside the exact model as `<model>.gguf.tidestudio.json`, with separate load/inference sections.
 - Loaded-model Inference changes should apply to subsequent requests immediately where request-time overrides are supported; Load settings remain next-load settings.
 - Explicit inference request fields must override TideStudio's saved per-model defaults.
+- Model Load/Inference UI must be capability-gated. LLMs may expose prompt/sampling/speculation, Embedding models expose pooling, Drafter models are configured from the target LLM, and DECISION models do not expose chat-generation controls.
+- MTP is shown and launched only for LLM targets with detected MTP support. External draft-model speculation is a target-side configuration because compatibility depends on the selected target/draft pair.
+- Treat reasoning as multiple capabilities rather than one boolean: thinking toggle, effort levels, token budget, and reasoning preservation may have different support. Do not show unsupported controls.
+- Request-time inference defaults must not also be forced as llama-server sampling/reasoning launch flags; otherwise live edits cannot reliably override worker-global defaults.
 - Persist Server Settings across launches in TideStudio SQLite.
 - Numeric server settings inputs that users may clear while editing must keep a string draft instead of coercing every keystroke with `Number(...)`; the default server port is 3456.
 - Default model reasoning budget is 1024 unless a saved per-model value overrides it.

@@ -17,6 +17,8 @@ func TestInferenceDefaultsAreMergedWithoutOverridingRequest(t *testing.T) {
 	temperature := 0.2
 	topK := 10
 	thinking := false
+	reasoningBudget := 1024
+	preserveReasoning := true
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -34,6 +36,8 @@ func TestInferenceDefaultsAreMergedWithoutOverridingRequest(t *testing.T) {
 		Defaults: InferenceDefaults{
 			SystemPrompt:    "Default system prompt",
 			ThinkingEnabled: &thinking,
+			ReasoningBudget: &reasoningBudget,
+			ReasoningPreserve: &preserveReasoning,
 			Temperature:     &temperature,
 			TopK:            &topK,
 		},
@@ -74,6 +78,12 @@ func TestInferenceDefaultsAreMergedWithoutOverridingRequest(t *testing.T) {
 	kwargs := body["chat_template_kwargs"].(map[string]any)
 	if kwargs["enable_thinking"] != false {
 		t.Fatalf("thinking default not applied: %#v", kwargs)
+	}
+	if kwargs["preserve_reasoning"] != true {
+		t.Fatalf("reasoning-preserve default not applied: %#v", kwargs)
+	}
+	if body["thinking_budget_tokens"] != float64(1024) {
+		t.Fatalf("reasoning budget default not applied: %#v", body["thinking_budget_tokens"])
 	}
 }
 

@@ -153,6 +153,9 @@ fn scan_directory(
                 .as_ref()
                 .and_then(|value| value.parameter_size.clone()),
             context_length: inspection.as_ref().and_then(|value| value.context_length),
+            pooling_type: inspection
+                .as_ref()
+                .and_then(|value| value.pooling_type.clone()),
             quantization: infer_quantization(&filename),
             chat_template: inspection
                 .as_ref()
@@ -163,6 +166,15 @@ fn scan_directory(
             supports_reasoning: inspection
                 .as_ref()
                 .is_some_and(|value| value.capabilities.reasoning.supported),
+            supports_thinking_toggle: inspection
+                .as_ref()
+                .is_some_and(|value| value.capabilities.thinking_toggle.supported),
+            supports_reasoning_effort: inspection
+                .as_ref()
+                .is_some_and(|value| value.capabilities.reasoning_effort.supported),
+            supports_reasoning_preserve: inspection
+                .as_ref()
+                .is_some_and(|value| value.capabilities.reasoning_preserve.supported),
             supports_vision: inspection
                 .as_ref()
                 .is_some_and(|value| value.capabilities.vision.supported),

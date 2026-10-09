@@ -17,6 +17,18 @@ pub enum SpeculativeMode {
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub model_path: String,
+    #[serde(default = "default_model_category")]
+    pub model_category: String,
+    #[serde(default)]
+    pub supports_reasoning: bool,
+    #[serde(default)]
+    pub supports_thinking_toggle: bool,
+    #[serde(default)]
+    pub supports_reasoning_effort: bool,
+    #[serde(default)]
+    pub supports_reasoning_preserve: bool,
+    #[serde(default)]
+    pub supports_mtp: bool,
     #[serde(default)]
     pub model_id: String,
     #[serde(default)]
@@ -45,6 +57,8 @@ pub struct ServerConfig {
     pub frequency_penalty: Option<f32>,
     #[serde(default)]
     pub flash_attention: bool,
+    #[serde(default = "default_embedding_pooling")]
+    pub embedding_pooling: String,
     #[serde(default)]
     pub speculative_mode: SpeculativeMode,
     #[serde(default)]
@@ -55,4 +69,12 @@ pub struct ServerConfig {
     pub draft_min_probability: Option<f32>,
     #[serde(default)]
     pub extra_args: Vec<String>,
+}
+
+fn default_model_category() -> String {
+    "LLM".to_string()
+}
+
+fn default_embedding_pooling() -> String {
+    "model".to_string()
 }

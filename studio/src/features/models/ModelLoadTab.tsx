@@ -1,35 +1,41 @@
 import {
   Cpu,
+  Database,
   Layers3,
   MessageSquareText,
   Workflow,
 } from "lucide-react";
 import { CollapsibleSection } from "../../components/ui/CollapsibleSection";
-import { Dropdown } from "../../components/ui/Dropdown";
+import {
+  Dropdown,
+  type DropdownOption,
+} from "../../components/ui/Dropdown";
 import { InputField } from "../../components/ui/InputField";
 import { Switch } from "../../components/ui/Switch";
 import { TextAreaField } from "../../components/ui/TextAreaField";
 import type {
+  EmbeddingPooling,
   ModelConfig,
   SpeculativeMode,
 } from "../../lib/config";
+import type { CatalogModel } from "./types";
 
 type Props = {
+  model: CatalogModel;
   config: ModelConfig;
   runtimeLoaded?: boolean;
   onChange: (config: ModelConfig) => void;
 };
 
-const SPECULATIVE_OPTIONS: {
-  label: string;
-  value: SpeculativeMode;
-}[] = [
-  { label: "Disabled", value: "none" },
-  { label: "MTP", value: "mtp" },
-  { label: "Draft model", value: "draft" },
+const EMBEDDING_POOLING_OPTIONS: DropdownOption<EmbeddingPooling>[] = [
+  { label: "Model default", value: "model" },
+  { label: "Mean", value: "mean" },
+  { label: "CLS", value: "cls" },
+  { label: "Last token", value: "last" },
 ];
 
 export function ModelLoadTab({
+  model,
   config,
   runtimeLoaded = false,
   onChange,
@@ -41,12 +47,60 @@ export function ModelLoadTab({
     });
   }
 
+  const isLlm = model.category === "LLM";
+  const isReranker =
+    model.category === "Embedding" && model.poolingType === "rank";
+  const isEmbedding = model.category === "Embedding" && !isReranker;
+  const speculativeOptions: DropdownOption<SpeculativeMode>[] = [
+    { label: "Disabled", value: "none" },
+    ...(model.supportsMtp
+      ? [{ label: "MTP", value: "mtp" as const }]
+      : []),
+    { label: "Draft model", value: "draft" },
+  ];
+  const speculativeMode =
+    config.speculativeMode === "mtp" && !model.supportsMtp
+      ? "none"
+      : config.speculativeMode;
+
+  if (model.category === "Drafter") {
+    return (
+      <div className="model-inspector-tab">
+        <p className="inspector-helper-copy">
+          Drafter models are configured from the target LLM&apos;s Load &gt;
+          Speculative Decoding section. The target owns the draft model path,
+          draft GPU offload, and draft token limits.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="model-inspector-tab">
       {runtimeLoaded ? (
         <p className="inspector-helper-copy">
           Load settings are saved for this GGUF and apply the next time the model
           is loaded.
+        </p>
+      ) : null}
+      {isEmbedding ? (
+        <p className="inspector-helper-copy">
+          Embedding models use embedding mode and pooled vector output. Chat
+          templates, reasoning, sampling, and speculative decoding do not apply.
+        </p>
+      ) : null}
+      {isReranker ? (
+        <p className="inspector-helper-copy">
+          This GGUF reports rank pooling, which identifies a reranking model.
+          TideStudio does not expose a public reranking endpoint yet, so
+          embedding pooling and chat-generation settings are intentionally
+          hidden.
+        </p>
+      ) : null}
+      {model.category === "DECISION" ? (
+        <p className="inspector-helper-copy">
+          Decision models use typed decision inference rather than token
+          generation. Chat templates and speculative decoding do not apply.
         </p>
       ) : null}
       <CollapsibleSection title="Context and Offload" icon={Cpu}>
@@ -94,102 +148,129 @@ export function ModelLoadTab({
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Speculative Decoding" icon={Workflow}>
-        <div className="inspector-control-stack">
-          <div className="inspector-control-row">
-            <span>Mode</span>
-            <Dropdown
-              ariaLabel="Speculative decoding mode"
-              value={config.speculativeMode}
-              options={SPECULATIVE_OPTIONS}
-              onChange={(speculativeMode) => update({ speculativeMode })}
-            />
+      {isEmbedding ? (
+        <CollapsibleSection title="Embedding Output" icon={Database}>
+          <div className="inspector-control-stack">
+            <div className="inspector-control-row">
+              <span>Pooling</span>
+              <Dropdown
+                ariaLabel="Embedding pooling"
+                value={config.embeddingPooling}
+                options={EMBEDDING_POOLING_OPTIONS}
+                onChange={(embeddingPooling) => update({ embeddingPooling })}
+              />
+            </div>
+            <p className="inspector-control-hint">
+              {model.poolingType && model.poolingType !== "none"
+                ? `GGUF pooling metadata: ${model.poolingType}.`
+                : "OpenAI-compatible embeddings require pooled output. Use Mean, CLS, or Last token if the model default is unpooled."}
+            </p>
           </div>
+        </CollapsibleSection>
+      ) : null}
 
-          {config.speculativeMode !== "none" ? (
-            <>
-              <InputField
-                label="Max Draft Tokens"
-                layout="inline"
-                compact
-                type="number"
-                min={1}
-                value={config.draftMaxTokens ?? ""}
-                onChange={(event) =>
-                  update({
-                    draftMaxTokens: event.target.value
-                      ? Number(event.target.value)
-                      : null,
-                  })
-                }
+      {isLlm ? (
+        <CollapsibleSection title="Speculative Decoding" icon={Workflow}>
+          <div className="inspector-control-stack">
+            <div className="inspector-control-row">
+              <span>Mode</span>
+              <Dropdown
+                ariaLabel="Speculative decoding mode"
+                value={speculativeMode}
+                options={speculativeOptions}
+                onChange={(speculativeMode) => update({ speculativeMode })}
               />
+            </div>
 
-              <InputField
-                label="Min Draft Tokens"
-                layout="inline"
-                compact
-                type="number"
-                min={0}
-                value={config.draftMinTokens ?? ""}
-                onChange={(event) =>
-                  update({
-                    draftMinTokens: event.target.value
-                      ? Number(event.target.value)
-                      : null,
-                  })
-                }
-              />
+            {speculativeMode !== "none" ? (
+              <>
+                <InputField
+                  label="Max Draft Tokens"
+                  layout="inline"
+                  compact
+                  type="number"
+                  min={1}
+                  value={config.draftMaxTokens ?? ""}
+                  onChange={(event) =>
+                    update({
+                      draftMaxTokens: event.target.value
+                        ? Number(event.target.value)
+                        : null,
+                    })
+                  }
+                />
 
-              <InputField
-                label="Draft Min Probability"
-                layout="inline"
-                compact
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                value={config.draftMinProbability ?? ""}
-                onChange={(event) =>
-                  update({
-                    draftMinProbability: event.target.value
-                      ? Number(event.target.value)
-                      : null,
-                  })
-                }
-              />
-            </>
-          ) : null}
+                <InputField
+                  label="Min Draft Tokens"
+                  layout="inline"
+                  compact
+                  type="number"
+                  min={0}
+                  value={config.draftMinTokens ?? ""}
+                  onChange={(event) =>
+                    update({
+                      draftMinTokens: event.target.value
+                        ? Number(event.target.value)
+                        : null,
+                    })
+                  }
+                />
 
-          {config.speculativeMode === "draft" ? (
-            <>
-              <InputField
-                label="Draft Model Path"
-                type="text"
-                value={config.draftModelPath}
-                placeholder="D:\models\draft-model.gguf"
-                onChange={(event) =>
-                  update({ draftModelPath: event.target.value })
-                }
-              />
+                <InputField
+                  label="Draft Min Probability"
+                  layout="inline"
+                  compact
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={config.draftMinProbability ?? ""}
+                  onChange={(event) =>
+                    update({
+                      draftMinProbability: event.target.value
+                        ? Number(event.target.value)
+                        : null,
+                    })
+                  }
+                />
+              </>
+            ) : null}
 
-              <InputField
-                label="Draft GPU Layers"
-                layout="inline"
-                compact
-                type="number"
-                value={config.draftGpuLayers ?? ""}
-                onChange={(event) =>
-                  update({
-                    draftGpuLayers: event.target.value
-                      ? Number(event.target.value)
-                      : null,
-                  })
-                }
-              />
-            </>
-          ) : null}
-        </div>
-      </CollapsibleSection>
+            {speculativeMode === "draft" ? (
+              <>
+                <InputField
+                  label="Draft Model Path"
+                  type="text"
+                  value={config.draftModelPath}
+                  placeholder="D:\\models\\draft-model.gguf"
+                  onChange={(event) =>
+                    update({ draftModelPath: event.target.value })
+                  }
+                />
+
+                <InputField
+                  label="Draft GPU Layers"
+                  layout="inline"
+                  compact
+                  type="number"
+                  value={config.draftGpuLayers ?? ""}
+                  onChange={(event) =>
+                    update({
+                      draftGpuLayers: event.target.value
+                        ? Number(event.target.value)
+                        : null,
+                    })
+                  }
+                />
+                <p className="inspector-control-hint">
+                  External draft models must be tokenizer and vocabulary
+                  compatible with the target model.
+                </p>
+              </>
+            ) : null}
+          </div>
+        </CollapsibleSection>
+      ) : null}
 
       <CollapsibleSection title="Advanced" icon={Layers3}>
         <div className="inspector-control-stack">
@@ -209,20 +290,22 @@ export function ModelLoadTab({
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Prompt Template" icon={MessageSquareText}>
-        <div className="inspector-control-stack">
-          <TextAreaField
-            label="Template Override"
-            rows={6}
-            value={config.chatTemplate}
-            placeholder="Use GGUF model default"
-            hint="Prefilled from GGUF metadata when available. Edit it to override the model default."
-            onChange={(event) =>
-              update({ chatTemplate: event.target.value })
-            }
-          />
-        </div>
-      </CollapsibleSection>
+      {isLlm ? (
+        <CollapsibleSection title="Prompt Template" icon={MessageSquareText}>
+          <div className="inspector-control-stack">
+            <TextAreaField
+              label="Template Override"
+              rows={6}
+              value={config.chatTemplate}
+              placeholder="Use GGUF model default"
+              hint="Prefilled from GGUF metadata when available. Edit it to override the model default."
+              onChange={(event) =>
+                update({ chatTemplate: event.target.value })
+              }
+            />
+          </div>
+        </CollapsibleSection>
+      ) : null}
     </div>
   );
 }

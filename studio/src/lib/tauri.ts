@@ -20,15 +20,25 @@ export type ModelInfo = {
   architecture: string | null;
   parameters: string | null;
   contextLength: number | null;
+  poolingType: string | null;
   quantization: string | null;
   chatTemplate: string | null;
   supportsMtp: boolean;
   supportsReasoning: boolean;
+  supportsThinkingToggle: boolean;
+  supportsReasoningEffort: boolean;
+  supportsReasoningPreserve: boolean;
   supportsVision: boolean;
 };
 
 export type ServerConfig = ModelConfig & {
   modelPath: string;
+  modelCategory: ModelInfo["category"];
+  supportsReasoning: boolean;
+  supportsThinkingToggle: boolean;
+  supportsReasoningEffort: boolean;
+  supportsReasoningPreserve: boolean;
+  supportsMtp: boolean;
 };
 
 export type ServerStatus = {

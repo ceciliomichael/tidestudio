@@ -276,6 +276,12 @@ mod tests {
     fn config() -> ServerConfig {
         ServerConfig {
             model_path: "model.gguf".to_string(),
+            model_category: "LLM".to_string(),
+            supports_reasoning: false,
+            supports_thinking_toggle: false,
+            supports_reasoning_effort: false,
+            supports_reasoning_preserve: false,
+            supports_mtp: false,
             model_id: "model".to_string(),
             port: 32123,
             context_size: None,
@@ -296,6 +302,7 @@ mod tests {
             presence_penalty: None,
             frequency_penalty: None,
             flash_attention: false,
+            embedding_pooling: "model".to_string(),
             speculative_mode: SpeculativeMode::None,
             draft_model_path: String::new(),
             draft_gpu_layers: None,

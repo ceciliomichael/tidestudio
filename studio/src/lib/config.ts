@@ -1,4 +1,5 @@
 export type SpeculativeMode = "none" | "mtp" | "draft";
+export type EmbeddingPooling = "model" | "mean" | "cls" | "last";
 
 export type ServerSettings = {
   port: number;
@@ -42,6 +43,7 @@ export type ModelConfig = {
   presencePenalty: number | null;
   frequencyPenalty: number | null;
   flashAttention: boolean;
+  embeddingPooling: EmbeddingPooling;
   speculativeMode: SpeculativeMode;
   draftModelPath: string;
   draftGpuLayers: number | null;
@@ -59,6 +61,7 @@ export type ModelSettingsFile = {
     | "gpuLayers"
     | "chatTemplate"
     | "flashAttention"
+    | "embeddingPooling"
     | "speculativeMode"
     | "draftModelPath"
     | "draftGpuLayers"
@@ -86,7 +89,20 @@ export type ModelSettingsFile = {
   >;
 };
 
-export type LiveInferenceDefaults = ModelSettingsFile["inference"];
+export type LiveInferenceDefaults = Omit<
+  ModelSettingsFile["inference"],
+  "thinkingEnabled" | "reasoningPreserve"
+> & {
+  thinkingEnabled: boolean | null;
+  reasoningPreserve: boolean | null;
+};
+
+export type ReasoningCapabilities = {
+  supportsReasoning: boolean;
+  supportsThinkingToggle: boolean;
+  supportsReasoningEffort: boolean;
+  supportsReasoningPreserve: boolean;
+};
 
 export function createDefaultModelConfig(): ModelConfig {
   return {
@@ -108,6 +124,7 @@ export function createDefaultModelConfig(): ModelConfig {
     presencePenalty: 0,
     frequencyPenalty: 0,
     flashAttention: true,
+    embeddingPooling: "model",
     speculativeMode: "none",
     draftModelPath: "",
     draftGpuLayers: 99,
@@ -128,6 +145,7 @@ export function modelConfigToSettingsFile(
       gpuLayers: config.gpuLayers,
       chatTemplate: config.chatTemplate,
       flashAttention: config.flashAttention,
+      embeddingPooling: config.embeddingPooling,
       speculativeMode: config.speculativeMode,
       draftModelPath: config.draftModelPath,
       draftGpuLayers: config.draftGpuLayers,
@@ -136,7 +154,22 @@ export function modelConfigToSettingsFile(
       draftMinProbability: config.draftMinProbability,
       extraArgs: config.extraArgs,
     },
-    inference: liveInferenceDefaultsFromConfig(config),
+    inference: {
+      systemPrompt: config.systemPrompt,
+      thinkingEnabled: config.thinkingEnabled,
+      reasoningEffort: config.reasoningEffort,
+      reasoningBudget: config.reasoningBudget,
+      reasoningPreserve: config.reasoningPreserve,
+      temperature: config.temperature,
+      topK: config.topK,
+      topP: config.topP,
+      minP: config.minP,
+      typicalP: config.typicalP,
+      seed: config.seed,
+      repeatPenalty: config.repeatPenalty,
+      presencePenalty: config.presencePenalty,
+      frequencyPenalty: config.frequencyPenalty,
+    },
   };
 }
 
@@ -161,13 +194,22 @@ export function modelConfigFromSettingsFile(
 
 export function liveInferenceDefaultsFromConfig(
   config: ModelConfig,
+  capabilities: ReasoningCapabilities,
 ): LiveInferenceDefaults {
   return {
     systemPrompt: config.systemPrompt,
-    thinkingEnabled: config.thinkingEnabled,
-    reasoningEffort: config.reasoningEffort,
-    reasoningBudget: config.reasoningBudget,
-    reasoningPreserve: config.reasoningPreserve,
+    thinkingEnabled: capabilities.supportsThinkingToggle
+      ? config.thinkingEnabled
+      : null,
+    reasoningEffort: capabilities.supportsReasoningEffort
+      ? config.reasoningEffort
+      : "default",
+    reasoningBudget: capabilities.supportsReasoning
+      ? config.reasoningBudget
+      : null,
+    reasoningPreserve: capabilities.supportsReasoningPreserve
+      ? config.reasoningPreserve
+      : null,
     temperature: config.temperature,
     topK: config.topK,
     topP: config.topP,

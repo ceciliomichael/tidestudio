@@ -48,14 +48,22 @@ export function ModelInferenceTab({
   }
 
   if (model.category !== "LLM") {
+    const description =
+      model.category === "Embedding"
+        ? "Embedding models do not use chat prompts, reasoning controls, or token-sampling defaults. Configure pooling under Load; requests use the embeddings endpoint."
+        : model.category === "Drafter"
+          ? "Drafter models are speculative-decoding companions. They do not have standalone chat inference defaults in TideStudio."
+          : "Decision models use typed questions through /v1/systemone and /v1/decisions. Their probability scaling comes from the model, so chat prompts, reasoning controls, and token-sampling defaults do not apply.";
+
     return (
       <div className="model-inspector-tab">
-        <p className="inspector-helper-copy">
-          Chat-generation inference settings apply to LLM models.
-        </p>
+        <p className="inspector-helper-copy">{description}</p>
       </div>
     );
   }
+
+  const reasoningControlsEnabled =
+    !model.supportsThinkingToggle || config.thinkingEnabled;
 
   return (
     <div className="model-inspector-tab">
@@ -88,29 +96,33 @@ export function ModelInferenceTab({
       {model.supportsReasoning ? (
         <CollapsibleSection title="Reasoning" icon={BrainCircuit}>
           <div className="inspector-control-stack">
-            <div className="inspector-control-row">
-              <span>Enable Thinking</span>
-              <Switch
-                className="tide-switch"
-                checked={config.thinkingEnabled}
-                label="Enable thinking"
-                onChange={(thinkingEnabled) => update({ thinkingEnabled })}
-              />
-            </div>
+            {model.supportsThinkingToggle ? (
+              <div className="inspector-control-row">
+                <span>Enable Thinking</span>
+                <Switch
+                  className="tide-switch"
+                  checked={config.thinkingEnabled}
+                  label="Enable thinking"
+                  onChange={(thinkingEnabled) => update({ thinkingEnabled })}
+                />
+              </div>
+            ) : null}
 
-            {config.thinkingEnabled ? (
+            {reasoningControlsEnabled ? (
               <>
-                <div className="inspector-control-row">
-                  <span>Reasoning Effort</span>
-                  <Dropdown
-                    ariaLabel="Reasoning effort"
-                    value={config.reasoningEffort}
-                    options={REASONING_EFFORT_OPTIONS}
-                    onChange={(reasoningEffort) =>
-                      update({ reasoningEffort })
-                    }
-                  />
-                </div>
+                {model.supportsReasoningEffort ? (
+                  <div className="inspector-control-row">
+                    <span>Reasoning Effort</span>
+                    <Dropdown
+                      ariaLabel="Reasoning effort"
+                      value={config.reasoningEffort}
+                      options={REASONING_EFFORT_OPTIONS}
+                      onChange={(reasoningEffort) =>
+                        update({ reasoningEffort })
+                      }
+                    />
+                  </div>
+                ) : null}
 
                 <InputField
                   label="Reasoning Budget"
@@ -128,17 +140,19 @@ export function ModelInferenceTab({
                   }
                 />
 
-                <div className="inspector-control-row">
-                  <span>Preserve Reasoning</span>
-                  <Switch
-                    className="tide-switch"
-                    checked={config.reasoningPreserve}
-                    label="Preserve reasoning"
-                    onChange={(reasoningPreserve) =>
-                      update({ reasoningPreserve })
-                    }
-                  />
-                </div>
+                {model.supportsReasoningPreserve ? (
+                  <div className="inspector-control-row">
+                    <span>Preserve Reasoning</span>
+                    <Switch
+                      className="tide-switch"
+                      checked={config.reasoningPreserve}
+                      label="Preserve reasoning"
+                      onChange={(reasoningPreserve) =>
+                        update({ reasoningPreserve })
+                      }
+                    />
+                  </div>
+                ) : null}
               </>
             ) : null}
           </div>

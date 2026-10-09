@@ -1638,6 +1638,13 @@ h2 {
   line-height: 1.35;
 }
 
+.inspector-control-hint {
+  margin: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .logs-section {
   margin-top: 30px;
   padding-top: 24px;

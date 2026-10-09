@@ -7,13 +7,11 @@ use super::ServerConfig;
 pub struct InferenceDefaults {
     #[serde(default)]
     pub system_prompt: String,
-    #[serde(default)]
-    pub thinking_enabled: bool,
+    pub thinking_enabled: Option<bool>,
     #[serde(default = "default_reasoning_effort")]
     pub reasoning_effort: String,
     pub reasoning_budget: Option<i32>,
-    #[serde(default)]
-    pub reasoning_preserve: bool,
+    pub reasoning_preserve: Option<bool>,
     pub temperature: Option<f32>,
     pub top_k: Option<i32>,
     pub top_p: Option<f32>,
@@ -33,10 +31,21 @@ impl From<&ServerConfig> for InferenceDefaults {
     fn from(config: &ServerConfig) -> Self {
         Self {
             system_prompt: config.system_prompt.clone(),
-            thinking_enabled: config.thinking_enabled,
-            reasoning_effort: config.reasoning_effort.clone(),
-            reasoning_budget: config.reasoning_budget,
-            reasoning_preserve: config.reasoning_preserve,
+            thinking_enabled: config
+                .supports_thinking_toggle
+                .then_some(config.thinking_enabled),
+            reasoning_effort: if config.supports_reasoning_effort {
+                config.reasoning_effort.clone()
+            } else {
+                "default".to_string()
+            },
+            reasoning_budget: config
+                .supports_reasoning
+                .then_some(config.reasoning_budget)
+                .flatten(),
+            reasoning_preserve: config
+                .supports_reasoning_preserve
+                .then_some(config.reasoning_preserve),
             temperature: config.temperature,
             top_k: config.top_k,
             top_p: config.top_p,

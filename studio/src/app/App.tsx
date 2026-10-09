@@ -108,22 +108,34 @@ function modelInfoToCatalog(model: ModelInfo): CatalogModel {
     architecture: model.architecture ?? "Unknown",
     parameters: model.parameters ?? "Unknown",
     contextLength: formatContextLength(model.contextLength),
+    poolingType: model.poolingType,
     quantization: model.quantization ?? "Unknown",
     size: formatModelSize(model.sizeBytes),
     modified: formatModified(model.modifiedMs),
     chatTemplate: model.chatTemplate,
     supportsMtp: model.supportsMtp,
     supportsReasoning: model.supportsReasoning,
+    supportsThinkingToggle: model.supportsThinkingToggle,
+    supportsReasoningEffort: model.supportsReasoningEffort,
+    supportsReasoningPreserve: model.supportsReasoningPreserve,
     supportsVision: model.supportsVision,
   };
 }
 
 function createModelConfig(model: CatalogModel): ModelConfig {
+  const detectedPooling =
+    model.poolingType === "mean" ||
+    model.poolingType === "cls" ||
+    model.poolingType === "last"
+      ? model.poolingType
+      : "model";
+
   return {
     ...createDefaultModelConfig(),
     chatTemplate: model.chatTemplate ?? "",
-    speculativeMode: model.supportsMtp ? "mtp" : "none",
-    extraArgs: model.category === "Embedding" ? ["--embeddings"] : [],
+    embeddingPooling: detectedPooling,
+    speculativeMode:
+      model.category === "LLM" && model.supportsMtp ? "mtp" : "none",
   };
 }
 
@@ -140,12 +152,16 @@ function runtimeCatalogModel(server: ServerStatus): CatalogModel {
     architecture: "Unknown",
     parameters: "Unknown",
     contextLength: "Unknown",
+    poolingType: null,
     quantization: "Unknown",
     size: "Loaded",
     modified: "Running",
     chatTemplate: null,
     supportsMtp: false,
     supportsReasoning: false,
+    supportsThinkingToggle: false,
+    supportsReasoningEffort: false,
+    supportsReasoningPreserve: false,
     supportsVision: false,
   };
 }
@@ -600,7 +616,10 @@ export function App() {
     void persistModelConfig(selectedCatalogModel.path, config).catch((cause) =>
       setError(String(cause)),
     );
-    const defaults = liveInferenceDefaultsFromConfig(config);
+    const defaults = liveInferenceDefaultsFromConfig(
+      config,
+      selectedCatalogModel,
+    );
     for (const server of runningServers) {
       if (server.modelPath !== selectedCatalogModel.path) {
         continue;
@@ -657,18 +676,41 @@ export function App() {
     if (selectedServer) {
       void updateServerInference(
         selectedServer.port,
-        liveInferenceDefaultsFromConfig(config),
+        liveInferenceDefaultsFromConfig(
+          config,
+          selectedServerModel,
+        ),
       ).catch((cause) => setError(String(cause)));
     }
   }
 
   async function handleLoadModel(model: CatalogModel) {
+    if (model.category === "Embedding" && model.poolingType === "rank") {
+      setError(
+        "This GGUF is a reranking model (rank pooling). TideStudio does not expose a public reranking endpoint yet.",
+      );
+      return;
+    }
+
     const modelConfig =
       catalogConfigs[model.path] ?? createModelConfig(model);
     const config: ServerConfig = {
       modelPath: model.path,
+      modelCategory: model.category,
+      supportsReasoning: model.supportsReasoning,
+      supportsThinkingToggle: model.supportsThinkingToggle,
+      supportsReasoningEffort: model.supportsReasoningEffort,
+      supportsReasoningPreserve: model.supportsReasoningPreserve,
+      supportsMtp: model.supportsMtp,
       ...modelConfig,
+      speculativeMode:
+        model.category !== "LLM"
+          ? "none"
+          : modelConfig.speculativeMode === "mtp" && !model.supportsMtp
+            ? "none"
+            : modelConfig.speculativeMode,
       chatTemplate:
+        model.category !== "LLM" ||
         !modelConfig.chatTemplate.trim() ||
         modelConfig.chatTemplate === model.chatTemplate
           ? ""

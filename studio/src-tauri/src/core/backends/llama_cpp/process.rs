@@ -90,10 +90,23 @@ pub fn spawn_llama_server(
         command.arg("--flash-attn").arg("on");
     }
 
-    add_prompt_args(&mut command, config);
-    add_reasoning_args(&mut command, config);
-    add_sampling_args(&mut command, config);
-    add_speculative_args(&mut command, config)?;
+    match config.model_category.as_str() {
+        "LLM" => {
+            add_prompt_args(&mut command, config);
+            if config.speculative_mode == SpeculativeMode::Mtp && !config.supports_mtp {
+                return Err("MTP speculative decoding is not supported by this model".to_string());
+            }
+            add_speculative_args(&mut command, config)?;
+        }
+        "Embedding" => {
+            command.arg("--embeddings");
+            if config.embedding_pooling != "model" {
+                command.arg("--pooling").arg(&config.embedding_pooling);
+            }
+        }
+        "Drafter" | "DECISION" => {}
+        _ => {}
+    }
 
     command.args(&config.extra_args);
 
@@ -119,74 +132,6 @@ fn add_prompt_args(command: &mut Command, config: &ServerConfig) {
 
     if !chat_template.is_empty() {
         command.arg("--chat-template").arg(chat_template);
-    }
-}
-
-fn add_reasoning_args(command: &mut Command, config: &ServerConfig) {
-    if config.thinking_enabled {
-        command.arg("--reasoning").arg("on");
-
-        command
-            .arg("--reasoning-effort")
-            .arg(config.reasoning_effort.trim());
-
-        if let Some(reasoning_budget) = config.reasoning_budget {
-            command
-                .arg("--reasoning-budget")
-                .arg(reasoning_budget.to_string());
-        }
-
-        if config.reasoning_preserve {
-            command.arg("--reasoning-preserve");
-        } else {
-            command.arg("--no-reasoning-preserve");
-        }
-    } else {
-        command.arg("--reasoning").arg("off");
-    }
-}
-
-fn add_sampling_args(command: &mut Command, config: &ServerConfig) {
-    if let Some(temperature) = config.temperature {
-        command.arg("--temp").arg(temperature.to_string());
-    }
-
-    if let Some(top_k) = config.top_k {
-        command.arg("--top-k").arg(top_k.to_string());
-    }
-
-    if let Some(top_p) = config.top_p {
-        command.arg("--top-p").arg(top_p.to_string());
-    }
-
-    if let Some(min_p) = config.min_p {
-        command.arg("--min-p").arg(min_p.to_string());
-    }
-
-    if let Some(typical_p) = config.typical_p {
-        command.arg("--typical-p").arg(typical_p.to_string());
-    }
-
-    if let Some(seed) = config.seed {
-        command.arg("--seed").arg(seed.to_string());
-    }
-
-    if let Some(repeat_penalty) = config.repeat_penalty {
-        command
-            .arg("--repeat-penalty")
-            .arg(repeat_penalty.to_string());
-    }
-
-    if let Some(presence_penalty) = config.presence_penalty {
-        command
-            .arg("--presence-penalty")
-            .arg(presence_penalty.to_string());
-    }
-
-    if let Some(frequency_penalty) = config.frequency_penalty {
-        command
-            .arg("--frequency-penalty")
-            .arg(frequency_penalty.to_string());
     }
 }
 

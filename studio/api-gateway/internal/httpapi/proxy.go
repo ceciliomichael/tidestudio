@@ -142,38 +142,49 @@ func applySamplingDefaults(payload map[string]any, defaults InferenceDefaults, p
 }
 
 func applyThinkingDefaults(payload map[string]any, defaults InferenceDefaults, path string) {
-	if defaults.ThinkingEnabled == nil {
-		return
-	}
-
 	switch path {
 	case "/v1/chat/completions":
-		kwargs, _ := payload["chat_template_kwargs"].(map[string]any)
-		if kwargs == nil {
-			kwargs = map[string]any{}
-			payload["chat_template_kwargs"] = kwargs
+		if defaults.ThinkingEnabled != nil || defaults.ReasoningPreserve != nil {
+			kwargs, _ := payload["chat_template_kwargs"].(map[string]any)
+			if kwargs == nil {
+				kwargs = map[string]any{}
+				payload["chat_template_kwargs"] = kwargs
+			}
+			if defaults.ThinkingEnabled != nil {
+				setIfMissing(kwargs, "enable_thinking", *defaults.ThinkingEnabled)
+			}
+			if defaults.ReasoningPreserve != nil {
+				setIfMissing(kwargs, "preserve_reasoning", *defaults.ReasoningPreserve)
+			}
 		}
-		setIfMissing(kwargs, "enable_thinking", *defaults.ThinkingEnabled)
 		if defaults.ReasoningEffort != "" && defaults.ReasoningEffort != "default" {
 			setIfMissing(payload, "reasoning_effort", defaults.ReasoningEffort)
 		}
-		setOptional(payload, "reasoning_budget", defaults.ReasoningBudget)
-		if defaults.ReasoningPreserve != nil {
-			setIfMissing(payload, "reasoning_preserve", *defaults.ReasoningPreserve)
-		}
+		setOptional(payload, "thinking_budget_tokens", defaults.ReasoningBudget)
 	case "/v1/responses":
-		kwargs, _ := payload["chat_template_kwargs"].(map[string]any)
-		if kwargs == nil {
-			kwargs = map[string]any{}
-			payload["chat_template_kwargs"] = kwargs
+		if defaults.ThinkingEnabled != nil || defaults.ReasoningPreserve != nil {
+			kwargs, _ := payload["chat_template_kwargs"].(map[string]any)
+			if kwargs == nil {
+				kwargs = map[string]any{}
+				payload["chat_template_kwargs"] = kwargs
+			}
+			if defaults.ThinkingEnabled != nil {
+				setIfMissing(kwargs, "enable_thinking", *defaults.ThinkingEnabled)
+			}
+			if defaults.ReasoningPreserve != nil {
+				setIfMissing(kwargs, "preserve_reasoning", *defaults.ReasoningPreserve)
+			}
 		}
-		setIfMissing(kwargs, "enable_thinking", *defaults.ThinkingEnabled)
 		if defaults.ReasoningEffort != "" &&
 			defaults.ReasoningEffort != "default" &&
 			payload["reasoning"] == nil {
 			payload["reasoning"] = map[string]any{"effort": defaults.ReasoningEffort}
 		}
+		setOptional(payload, "thinking_budget_tokens", defaults.ReasoningBudget)
 	case "/v1/messages":
+		if defaults.ThinkingEnabled == nil {
+			return
+		}
 		if _, exists := payload["thinking"]; exists {
 			return
 		}

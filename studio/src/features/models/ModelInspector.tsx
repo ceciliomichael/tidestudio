@@ -85,6 +85,7 @@ export function ModelInspector({
         {tab === "info" ? <ModelInfoTab model={selectedModel} /> : null}
         {tab === "load" ? (
           <ModelLoadTab
+            model={selectedModel}
             config={config}
             runtimeLoaded={runtimeLoaded}
             onChange={onChange}
