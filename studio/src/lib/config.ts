@@ -51,6 +51,43 @@ export type ModelConfig = {
   extraArgs: string[];
 };
 
+export type ModelSettingsFile = {
+  version: 1;
+  load: Pick<
+    ModelConfig,
+    | "contextSize"
+    | "gpuLayers"
+    | "chatTemplate"
+    | "flashAttention"
+    | "speculativeMode"
+    | "draftModelPath"
+    | "draftGpuLayers"
+    | "draftMaxTokens"
+    | "draftMinTokens"
+    | "draftMinProbability"
+    | "extraArgs"
+  >;
+  inference: Pick<
+    ModelConfig,
+    | "systemPrompt"
+    | "thinkingEnabled"
+    | "reasoningEffort"
+    | "reasoningBudget"
+    | "reasoningPreserve"
+    | "temperature"
+    | "topK"
+    | "topP"
+    | "minP"
+    | "typicalP"
+    | "seed"
+    | "repeatPenalty"
+    | "presencePenalty"
+    | "frequencyPenalty"
+  >;
+};
+
+export type LiveInferenceDefaults = ModelSettingsFile["inference"];
+
 export function createDefaultModelConfig(): ModelConfig {
   return {
     contextSize: 32768,
@@ -78,6 +115,68 @@ export function createDefaultModelConfig(): ModelConfig {
     draftMinTokens: 0,
     draftMinProbability: 0,
     extraArgs: [],
+  };
+}
+
+export function modelConfigToSettingsFile(
+  config: ModelConfig,
+): ModelSettingsFile {
+  return {
+    version: 1,
+    load: {
+      contextSize: config.contextSize,
+      gpuLayers: config.gpuLayers,
+      chatTemplate: config.chatTemplate,
+      flashAttention: config.flashAttention,
+      speculativeMode: config.speculativeMode,
+      draftModelPath: config.draftModelPath,
+      draftGpuLayers: config.draftGpuLayers,
+      draftMaxTokens: config.draftMaxTokens,
+      draftMinTokens: config.draftMinTokens,
+      draftMinProbability: config.draftMinProbability,
+      extraArgs: config.extraArgs,
+    },
+    inference: liveInferenceDefaultsFromConfig(config),
+  };
+}
+
+export function modelConfigFromSettingsFile(
+  settings: ModelSettingsFile,
+  fallback: ModelConfig,
+): ModelConfig {
+  if (
+    settings.version !== 1 ||
+    !settings.load ||
+    !settings.inference
+  ) {
+    return fallback;
+  }
+
+  return {
+    ...fallback,
+    ...settings.load,
+    ...settings.inference,
+  };
+}
+
+export function liveInferenceDefaultsFromConfig(
+  config: ModelConfig,
+): LiveInferenceDefaults {
+  return {
+    systemPrompt: config.systemPrompt,
+    thinkingEnabled: config.thinkingEnabled,
+    reasoningEffort: config.reasoningEffort,
+    reasoningBudget: config.reasoningBudget,
+    reasoningPreserve: config.reasoningPreserve,
+    temperature: config.temperature,
+    topK: config.topK,
+    topP: config.topP,
+    minP: config.minP,
+    typicalP: config.typicalP,
+    seed: config.seed,
+    repeatPenalty: config.repeatPenalty,
+    presencePenalty: config.presencePenalty,
+    frequencyPenalty: config.frequencyPenalty,
   };
 }
 

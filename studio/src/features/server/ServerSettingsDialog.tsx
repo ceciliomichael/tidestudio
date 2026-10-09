@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { Button } from "../../components/ui/Button";
 import {
   KeyRound,
   Network,
@@ -22,15 +24,23 @@ export function ServerSettingsDialog({
   onClose,
   onChange,
 }: Props) {
+  const [draft, setDraft] = useState(settings);
+
+  useEffect(() => {
+    if (open) {
+      setDraft(settings);
+    }
+  }, [open, settings]);
+
   function update(patch: Partial<ServerSettings>) {
-    onChange({
-      ...settings,
+    setDraft((current) => ({
+      ...current,
       ...patch,
-    });
+    }));
   }
 
   const activeKeyCount =
-    settings.apiKeyEnabled && settings.apiKey.trim() ? 1 : 0;
+    draft.apiKeyEnabled && draft.apiKey.trim() ? 1 : 0;
 
   return (
     <Modal
@@ -47,7 +57,7 @@ export function ServerSettingsDialog({
           type="number"
           min={1}
           max={65535}
-          value={settings.port}
+          value={draft.port}
           onChange={(event) =>
             update({ port: Number(event.target.value) })
           }
@@ -60,7 +70,7 @@ export function ServerSettingsDialog({
           </span>
           <Switch
             className="tide-switch"
-            checked={settings.apiKeyEnabled}
+            checked={draft.apiKeyEnabled}
             label="Require authentication"
             onChange={(apiKeyEnabled) => update({ apiKeyEnabled })}
           />
@@ -71,11 +81,11 @@ export function ServerSettingsDialog({
           <strong>{activeKeyCount}</strong>
         </div>
 
-        {settings.apiKeyEnabled ? (
+        {draft.apiKeyEnabled ? (
           <InputField
             label="API Key"
             type="password"
-            value={settings.apiKey}
+            value={draft.apiKey}
             placeholder="Enter API key"
             autoComplete="off"
             onChange={(event) => update({ apiKey: event.target.value })}
@@ -89,7 +99,7 @@ export function ServerSettingsDialog({
           </span>
           <Switch
             className="tide-switch"
-            checked={settings.serveOnLocalNetwork}
+            checked={draft.serveOnLocalNetwork}
             label="Serve on local network"
             onChange={(serveOnLocalNetwork) =>
               update({ serveOnLocalNetwork })
@@ -101,7 +111,7 @@ export function ServerSettingsDialog({
           <span>Allow per-request MCPs</span>
           <Switch
             className="tide-switch"
-            checked={settings.allowPerRequestMcps}
+            checked={draft.allowPerRequestMcps}
             label="Allow per-request MCPs"
             onChange={(allowPerRequestMcps) =>
               update({ allowPerRequestMcps })
@@ -113,7 +123,7 @@ export function ServerSettingsDialog({
           <span>Allow calling servers from mcp.json</span>
           <Switch
             className="tide-switch"
-            checked={settings.allowMcpJsonServers}
+            checked={draft.allowMcpJsonServers}
             disabled
             label="Allow calling servers from mcp.json"
             onChange={() => undefined}
@@ -127,7 +137,7 @@ export function ServerSettingsDialog({
           </span>
           <Switch
             className="tide-switch"
-            checked={settings.corsEnabled}
+            checked={draft.corsEnabled}
             label="Enable CORS"
             onChange={(corsEnabled) => update({ corsEnabled })}
           />
@@ -137,7 +147,7 @@ export function ServerSettingsDialog({
           <span>Just-in-Time Model Loading</span>
           <Switch
             className="tide-switch"
-            checked={settings.jitModelLoading}
+            checked={draft.jitModelLoading}
             label="Just-in-Time model loading"
             onChange={(jitModelLoading) => update({ jitModelLoading })}
           />
@@ -147,7 +157,7 @@ export function ServerSettingsDialog({
           <span>Auto unload unused JIT loaded models</span>
           <Switch
             className="tide-switch"
-            checked={settings.autoUnloadJitModels}
+            checked={draft.autoUnloadJitModels}
             label="Auto unload unused JIT loaded models"
             onChange={(autoUnloadJitModels) =>
               update({ autoUnloadJitModels })
@@ -166,7 +176,7 @@ export function ServerSettingsDialog({
           compact
           type="number"
           min={1}
-          value={settings.maxIdleTtlMinutes}
+          value={draft.maxIdleTtlMinutes}
           onChange={(event) =>
             update({ maxIdleTtlMinutes: Number(event.target.value) })
           }
@@ -176,7 +186,7 @@ export function ServerSettingsDialog({
           <span>Only Keep Last JIT Loaded Model</span>
           <Switch
             className="tide-switch"
-            checked={settings.onlyKeepLastJitModel}
+            checked={draft.onlyKeepLastJitModel}
             label="Only keep last JIT loaded model"
             onChange={(onlyKeepLastJitModel) =>
               update({ onlyKeepLastJitModel })
@@ -184,10 +194,15 @@ export function ServerSettingsDialog({
           />
         </div>
 
-        <p className="server-settings-dialog__note">
-          Port, network binding, authentication, and CORS are server launch
-          settings. JIT and MCP policies are TideStudio server-manager behavior.
-        </p>
+        <Button
+          variant="primary"
+          onClick={() => {
+            onChange(draft);
+            onClose();
+          }}
+        >
+          Apply Server Settings
+        </Button>
       </div>
     </Modal>
   );

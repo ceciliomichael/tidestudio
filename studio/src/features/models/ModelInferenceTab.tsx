@@ -17,6 +17,7 @@ import type { CatalogModel } from "./types";
 type Props = {
   model: CatalogModel;
   config: ModelConfig;
+  runtimeLoaded?: boolean;
   onChange: (config: ModelConfig) => void;
 };
 
@@ -36,6 +37,7 @@ const REASONING_EFFORT_OPTIONS: {
 export function ModelInferenceTab({
   model,
   config,
+  runtimeLoaded = false,
   onChange,
 }: Props) {
   function update(patch: Partial<ModelConfig>) {
@@ -57,6 +59,12 @@ export function ModelInferenceTab({
 
   return (
     <div className="model-inspector-tab">
+      {runtimeLoaded ? (
+        <p className="inspector-helper-copy">
+          Inference defaults apply to new requests immediately without reloading
+          the model.
+        </p>
+      ) : null}
       <CollapsibleSection title="Prompt" icon={MessageSquareText}>
         <div className="inspector-control-stack">
           <TextAreaField

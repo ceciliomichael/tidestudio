@@ -2,6 +2,7 @@ import {
   BrainCircuit,
   CalendarDays,
   Download,
+  ExternalLink,
   Eye,
   FileText,
   Hammer,
@@ -10,7 +11,12 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
 import { Button } from "../../components/ui/Button";
 import { Dropdown } from "../../components/ui/Dropdown";
 import { IconButton } from "../../components/ui/IconButton";
@@ -29,6 +35,14 @@ type Props = {
   downloaded: DownloadedModel | null;
   onClose: () => void;
   onDownload: (file: HuggingFaceFile) => void;
+};
+
+type HastNode = {
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  value?: string;
+  children?: HastNode[];
 };
 
 function progressPercent(activity: DownloadActivity) {
@@ -95,50 +109,140 @@ function repoCapabilityHints(repo: HuggingFaceRepoDetails) {
   ].filter((capability) => capability.visible);
 }
 
-function readmeExcerpt(readme: string | null) {
-  if (!readme) return [];
-
+function readmeMarkdown(readme: string | null) {
+  if (!readme) return "";
   const lines = readme.split("\n");
-  const cleaned: string[] = [];
-  let inFrontmatter = lines[0]?.trim() === "---";
+  if (lines[0]?.trim() !== "---") return readme;
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const raw = lines[index];
+  const end = lines.findIndex(
+    (line, index) => index > 0 && line.trim() === "---",
+  );
+  return end >= 0 ? lines.slice(end + 1).join("\n").trim() : readme;
+}
 
-    if (inFrontmatter) {
-      if (index > 0 && raw.trim() === "---") inFrontmatter = false;
-      continue;
-    }
-
-    let line = raw.trim();
-
-    if (
-      !line ||
-      line.startsWith("<") ||
-      line.startsWith("![") ||
-      line.startsWith("|")
-    ) {
-      if (cleaned[cleaned.length - 1] !== "") cleaned.push("");
-      continue;
-    }
-
-    while (line.startsWith("#")) line = line.slice(1).trimStart();
-    if (line.startsWith("- ") || line.startsWith("* ")) line = "• " + line.slice(2);
-
-    line = line.split("**").join("");
-    line = line.split("__").join("");
-    line = line.split(String.fromCharCode(96)).join("");
-
-    if (line.length > 0) cleaned.push(line);
-    if (cleaned.join("\n").length > 3600) break;
+function hasLinkedImage(node: HastNode, insideLink = false): boolean {
+  const isLink = node.type === "element" && node.tagName === "a";
+  if (node.type === "element" && node.tagName === "img" && insideLink) {
+    return true;
   }
 
-  return cleaned
-    .join("\n")
-    .split("\n\n")
-    .map((block) => block.trim())
-    .filter((block) => block.length > 20)
-    .slice(0, 5);
+  return (
+    node.children?.some((child) =>
+      hasLinkedImage(child, insideLink || isLink),
+    ) ?? false
+  );
+}
+
+function hasMeaningfulText(node: HastNode): boolean {
+  if (node.type === "text") {
+    return Boolean(node.value?.trim());
+  }
+  return node.children?.some(hasMeaningfulText) ?? false;
+}
+
+function isWhitespaceNode(node: HastNode) {
+  return node.type === "text" && !node.value?.trim();
+}
+
+function isBadgeBlock(node: HastNode) {
+  return hasLinkedImage(node) && !hasMeaningfulText(node);
+}
+
+function groupReadmeBadgeRows() {
+  return (tree: HastNode) => {
+    const visit = (node: HastNode) => {
+      node.children?.forEach(visit);
+      if (!node.children?.length) return;
+
+      const grouped: HastNode[] = [];
+      let index = 0;
+
+      while (index < node.children.length) {
+        const child = node.children[index];
+        if (!isBadgeBlock(child)) {
+          grouped.push(child);
+          index += 1;
+          continue;
+        }
+
+        const badges: HastNode[] = [child];
+        let cursor = index + 1;
+        while (cursor < node.children.length) {
+          const next = node.children[cursor];
+          if (isWhitespaceNode(next)) {
+            cursor += 1;
+            continue;
+          }
+          if (!isBadgeBlock(next)) break;
+          badges.push(next);
+          cursor += 1;
+        }
+
+        grouped.push({
+          type: "element",
+          tagName: "div",
+          properties: { className: ["download-readme__badge-row"] },
+          children: badges,
+        });
+        index = cursor;
+      }
+
+      node.children = grouped;
+    };
+
+    visit(tree);
+  };
+}
+
+function resolveReadmeUrl(
+  repo: HuggingFaceRepoDetails,
+  value: string | undefined,
+  kind: "link" | "image",
+) {
+  if (!value) return undefined;
+  const raw = value.trim();
+  if (!raw) return undefined;
+
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("//")) return "https:" + raw;
+  if (kind === "image" && raw.startsWith("data:image/")) return raw;
+  if (kind === "link" && raw.startsWith("#")) return raw;
+
+  const origin =
+    repo.source === "modelscope"
+      ? "https://modelscope.cn"
+      : "https://huggingface.co";
+  if (raw.startsWith("/")) {
+    return new URL(raw, origin).toString();
+  }
+
+  if (repo.source === "huggingface") {
+    const mode = kind === "image" ? "resolve" : "blob";
+    return new URL(
+      raw,
+      `https://huggingface.co/${repo.repoId}/${mode}/main/README.md`,
+    ).toString();
+  }
+
+  const relative = new URL(raw, "https://modelscope.local/README.md");
+  let filePath = relative.pathname.replace(/^\//, "");
+  try {
+    filePath = decodeURIComponent(filePath);
+  } catch {
+    // Keep the already-encoded path if it contains malformed percent escapes.
+  }
+  const asset = new URL(
+    `https://modelscope.cn/api/v1/models/${repo.repoId}/repo`,
+  );
+  asset.searchParams.set("Revision", "master");
+  asset.searchParams.set("FilePath", filePath);
+  return asset.toString();
+}
+
+function repositoryPageUrl(repo: HuggingFaceRepoDetails) {
+  return repo.source === "modelscope"
+    ? `https://modelscope.cn/models/${repo.repoId}`
+    : `https://huggingface.co/${repo.repoId}`;
 }
 
 function CapabilityRow({
@@ -178,9 +282,11 @@ function DownloadOptionSelector({
   const file = files.find((candidate) => candidate.filename === selectedFilename) ?? files[0];
   if (!file) return null;
 
-  const downloadId = repo.repoId + "::" + file.filename;
+  const downloadId =
+    repo.source + "::" + repo.repoId + "::" + file.filename;
   const activity = activities.find((candidate) => candidate.downloadId === downloadId);
   const downloading = activity?.status === "downloading";
+  const isDownloaded = file.downloaded || activity?.status === "completed";
   const percent = activity ? progressPercent(activity) : null;
 
   return (
@@ -192,6 +298,16 @@ function DownloadOptionSelector({
           options={files.map((candidate) => ({
             value: candidate.filename,
             label: candidate.filename + " · " + formatBytes(candidate.sizeBytes),
+            badge:
+              candidate.downloaded ||
+              activities.some(
+                (activity) =>
+                  activity.downloadId ===
+                    repo.source + "::" + repo.repoId + "::" + candidate.filename &&
+                  activity.status === "completed",
+              )
+                ? "Downloaded"
+                : undefined,
           }))}
           onChange={setSelectedFilename}
         />
@@ -210,11 +326,19 @@ function DownloadOptionSelector({
       <Button
         variant="primary"
         size="compact"
-        disabled={downloading}
+        disabled={downloading || isDownloaded}
         onClick={() => onDownload(file)}
       >
-        <Download size={12} strokeWidth={2} aria-hidden="true" />
-        {downloading ? (percent === null ? "..." : percent + "%") : "Download"}
+        {isDownloaded ? null : (
+          <Download size={12} strokeWidth={2} aria-hidden="true" />
+        )}
+        {downloading
+          ? percent === null
+            ? "..."
+            : percent + "%"
+          : isDownloaded
+            ? "Downloaded"
+            : "Download"}
       </Button>
     </div>
   );
@@ -240,7 +364,7 @@ export function DownloadInspector({
     return (
       <section className="download-inspector">
         <div className="download-inspector__empty">
-          Select a Hugging Face repository to inspect its model files.
+          Select a model repository to inspect its model files.
         </div>
       </section>
     );
@@ -249,7 +373,7 @@ export function DownloadInspector({
   const modelFiles = repo.files.filter((file) => !file.isMmproj);
   const projectorFiles = repo.files.filter((file) => file.isMmproj);
   const capabilities = repoCapabilityHints(repo);
-  const readmeBlocks = readmeExcerpt(repo.readme);
+  const readme = readmeMarkdown(repo.readme);
 
   return (
     <section className="download-inspector download-inspector--model-search">
@@ -258,7 +382,16 @@ export function DownloadInspector({
           <div className="download-detail-header__identity">
             <PackageOpen size={17} strokeWidth={1.9} aria-hidden="true" />
             <div>
-              <strong>{repo.repoId}</strong>
+              <div className="download-detail-header__title-row">
+                <strong title={repo.repoId}>{repo.repoId}</strong>
+                <IconButton
+                  className="download-detail-header__external-link"
+                  icon={ExternalLink}
+                  label={`Open ${repo.repoId} in browser`}
+                  size={13}
+                  onClick={() => void openUrl(repositoryPageUrl(repo))}
+                />
+              </div>
               <span>{repo.pipelineTag ?? "GGUF repository"}</span>
             </div>
           </div>
@@ -376,7 +509,9 @@ export function DownloadInspector({
           ) : null}
         </section>
 
-        {downloaded?.repoId === repo.repoId && downloaded.inspection ? (
+        {downloaded?.source === repo.source &&
+        downloaded.repoId === repo.repoId &&
+        downloaded.inspection ? (
           <section className="download-detail-section">
             <div className="download-detail-section__heading">
               <div>
@@ -421,21 +556,54 @@ export function DownloadInspector({
           <div className="download-detail-section__heading">
             <div>
               <h3>README</h3>
-              <p>Repository model card from Hugging Face.</p>
+              <p>
+                Repository model card from{" "}
+                {repo.source === "modelscope" ? "ModelScope" : "Hugging Face"}.
+              </p>
             </div>
             <FileText size={15} strokeWidth={1.9} aria-hidden="true" />
           </div>
 
           <div className="download-readme__content">
-            {readmeBlocks.length > 0 ? (
-              readmeBlocks.map((block, index) => <p key={index}>{block}</p>)
+            {readme ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[
+                  rehypeRaw,
+                  rehypeSanitize,
+                  groupReadmeBadgeRows,
+                ]}
+                components={{
+                  a: ({ node: _, href, ...props }) => (
+                    <a
+                      {...props}
+                      href={resolveReadmeUrl(repo, href, "link")}
+                      target="_blank"
+                      rel="noreferrer"
+                    />
+                  ),
+                  img: ({ node: _, src, alt, ...props }) => (
+                    <img
+                      {...props}
+                      src={resolveReadmeUrl(repo, src, "image")}
+                      alt={alt ?? ""}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ),
+                }}
+              >
+                {readme}
+              </ReactMarkdown>
             ) : (
               <p>No README content is available for this repository.</p>
             )}
           </div>
         </section>
 
-        {downloaded?.repoId === repo.repoId && downloaded.inspectionError ? (
+        {downloaded?.source === repo.source &&
+        downloaded.repoId === repo.repoId &&
+        downloaded.inspectionError ? (
           <p className="download-inspector__warning">
             Download completed, but GGUF metadata inspection failed:{" "}
             {downloaded.inspectionError}

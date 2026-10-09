@@ -5,20 +5,20 @@
 - TideStudio UI should feel calm, precise, restrained, and deliberate, with hierarchy driven by spacing, typography, alignment, and fine separators rather than decoration.
 - Prefer flat solid surfaces and open layouts. Avoid gradients, glass effects, heavy shadows, and unnecessary cards.
 - Use a consistent icon library for interface icons. Do not use emoji as UI icons.
-- Structure the TideStudio desktop workspace around an approximately 20/60/20 resizable layout: left navigation, center primary content, right contextual model/server configuration.
+- Structure the TideStudio desktop workspace around a compact roughly 220px resizable navigation rail, one continuous primary work surface, and a contextual right inspector when needed.
 - Keep an `InferenceBackend` architecture boundary so llama.cpp is one backend implementation rather than being coupled directly to the server registry.
 - For the Models right inspector, use an LM-Studio-like Info / Load / Inference hierarchy with TideCode-style segmented controls, while keeping TideStudio's own light visual system.
 - Keep Models settings model-specific. Server/network settings such as port belong on Server. Models should support llama.cpp model/inference features such as MTP and speculative drafting when the bundled runtime supports them.
 - The Models Inference tab should expose practical LM-Studio-like prompt, reasoning, and sampling defaults. Only show reasoning controls for models marked reasoning-capable, and do not fake unsupported llama.cpp launch flags.
 - Prompt Template belongs at the bottom of Models > Load, not Inference. Leave it empty to use the GGUF-embedded chat template when available.
 - Prompt Template should use a multiline field. When GGUF metadata parsing exists, prefill/surface the embedded `tokenizer.chat_template` and allow the user to override it.
-- Server workspace should expose llama.cpp server capabilities directly: supported endpoint families in the center workspace and startup/restart settings such as port and API-key authentication in the right inspector.
+- Server workspace should expose only the OpenAI-compatible and Anthropic-compatible families in Supported Endpoints. Do not add a TideStudio/native segment.
 - Supported Endpoints should default to collapsed and persist its collapsed/open state in SQLite.
 - Server-wide settings should open from the Server Settings toolbar action, not occupy the right inspector. The Server right inspector should stay model-focused and show the selected loaded model's Info / Load / Inference tabs.
 - Load Model on Server should open a model-manager dialog with Currently Loaded and Your Models sections rather than navigating to the Models page.
-- Downloads should be a Hugging Face GGUF browser with real repository search, file-level downloads, progress, and post-download capability inspection.
+- Model Search should support real GGUF repository providers behind one source selector. Hugging Face is the default source and ModelScope is also supported, with file-level downloads, progress, and post-download capability inspection.
 - Downloads should fill the center panel, with its search/header area fixed and only the repository list vertically scrollable.
-- The Hugging Face workspace is visibly named Model Search. Search is debounced without a submit button, and download progress belongs in a global header download popover rather than inside Model Search.
+- The repository browser is visibly named Model Search. Search is debounced without a submit button, the active provider is selected beside the search field, and download progress belongs in the Downloads utility at the bottom of the sidebar rather than inside Model Search.
 - Model Search should use an LM Studio-like two-panel information hierarchy: search/results in the center and detailed repository stats, download options, capabilities, and README in the separate right inspector.
 - Model Search Download Options should present GGUF quantizations in a dropdown with one Download button, and separate vision projector files in their own dropdown.
 - Model Search browse mode should collapse the right pane until a repository is clicked. Selecting one should expand the detail pane to a majority of the usable workspace; closing the detail pane should restore the wide list view.
@@ -27,5 +27,28 @@
 - Models and Server should not use preview/mock model data. Both should derive from real discovered GGUF files and real managed llama-server processes.
 - Capability detection should prefer GGUF metadata and embedded chat-template evidence, then use repository/model heuristics with explicit confidence rather than claiming unsupported certainty.
 - MTP support is a capability, not a model category. A normal MTP-capable target model must remain an LLM; reserve Drafter classification for explicit draft/EAGLE-style companion models.
-- Future TideStudio public API routing should use a Go gateway in front of llama.cpp workers, with one public port and OpenAI/Anthropic compatibility; Rust/Tauri remains the desktop/process integration layer.
-- TideStudio should use a comfortable desktop UI scale. Avoid tiny 8-10px text for important labels and metadata; prefer roughly 12-14px readable text and 40px-class controls while preserving the existing panel layout.
+- Native decision GGUFs are a distinct `DECISION` model category. Prefer GGUF decision metadata such as `modern-bert.decision.*` or `decision-model` tags over filename heuristics.
+- Laya decision GGUFs use `laya.*` metadata and may report `general.architecture=ggmlc`; classify those as `DECISION` even if the bundled llama.cpp runtime cannot load that architecture yet.
+- GGUF parameter display must not depend only on `general.size_label`. Prefer `general.size_label`, then `general.parameter_count`, then derive the count from GGUF tensor dimensions without loading tensor data.
+- Models table columns should be Model, Publisher, Type, Params, Quant, Context Length, Size, and Actions. Keep rows compact, truncate long model names, and keep Actions aligned to the far-right edge. Do not show a redundant GGUF format label because all managed model files are GGUF.
+- MoE Params should preserve or derive the expert layout, for example `64x1.2B`, rather than flattening it to only a total parameter count.
+- Disable the WebView/browser native context menu across the desktop app. Model-specific actions belong in TideStudio's own Actions menu.
+- Model deletion must be limited to managed GGUFs and remove the sibling TideStudio settings sidecar with the model. If the GGUF is currently loaded, stop/unregister its worker automatically before deleting it.
+- New MTP-capable GGUFs default to MTP speculative mode unless a saved per-model sidecar overrides that default.
+- Models classified as Embedding should default to llama.cpp `--embeddings` mode.
+- TideStudio public API routing uses the Go-based API gateway under `studio/api-gateway/` in front of private loopback llama.cpp workers, with one public port and OpenAI, Anthropic, and TypeSafe System One compatibility; Rust/Tauri remains the desktop/process integration layer.
+- TideStudio should use a comfortable desktop UI scale. Avoid tiny 8-10px text for important labels and metadata; prefer roughly 12-14px readable text, 34-40px controls, flat list rows, and restrained separators.
+- Keep loaded-model entries as a two-row component: state/chevron on the first row, model identity/capabilities and RAM/Stop actions on the second row.
+- Loading a model must not block TideStudio UI or hold the server registry lock across llama.cpp readiness. Show the worker immediately as Loading, transition it to Ready after worker health + gateway registration succeed, and surface failed startup asynchronously.
+- Model loading is optimistic in the Server UI: clicking Load closes the modal and immediately inserts a pending Loading card before the Rust start command returns. Replace that pending card with the real worker status once spawn succeeds.
+- Keep the Load Model dialog compact and dense rather than a near-full-workspace modal. Position it toward the upper window area, use a search-first desktop-picker layout, one dense model list, inline metadata, and compact Loading/Eject state.
+- In the Load Model picker, make the entire unloaded model row clickable instead of showing a dedicated Load button.
+- Supported Endpoints should read as a wide floating rounded utility panel, while its segmented control remains compact.
+- Server RAM polling should refresh only the managed worker PID rather than scanning all system processes.
+- Persist each GGUF's Load and Inference configuration beside the exact model as `<model>.gguf.tidestudio.json`, with separate load/inference sections.
+- Loaded-model Inference changes should apply to subsequent requests immediately where request-time overrides are supported; Load settings remain next-load settings.
+- Explicit inference request fields must override TideStudio's saved per-model defaults.
+- Persist Server Settings across launches in TideStudio SQLite.
+- Keep llama.cpp's Web UI disabled for managed workers with `--no-webui`.
+- Show detected quantization in loaded-model cards when known.
+- Render repository README/model-card Markdown properly in the Model Search right inspector for both Hugging Face and ModelScope.

@@ -4,7 +4,11 @@ import type {
   HuggingFaceModelSummary,
   HuggingFaceRepoDetails,
 } from "../features/downloads/types";
-import type { ModelConfig } from "./config";
+import type {
+  LiveInferenceDefaults,
+  ModelConfig,
+  ModelSettingsFile,
+} from "./config";
 
 export type ModelInfo = {
   name: string;
@@ -12,36 +16,75 @@ export type ModelInfo = {
   sizeBytes: number;
   modifiedMs: number | null;
   publisher: string;
-  category: "LLM" | "Embedding" | "Drafter";
+  category: "LLM" | "Embedding" | "Drafter" | "DECISION";
   architecture: string | null;
   parameters: string | null;
+  contextLength: number | null;
   quantization: string | null;
   chatTemplate: string | null;
+  supportsMtp: boolean;
   supportsReasoning: boolean;
+  supportsVision: boolean;
 };
 
-export type ServerConfig = Omit<ModelConfig, "systemPrompt"> & {
+export type ServerConfig = ModelConfig & {
   modelPath: string;
-  host: string;
-  port: number;
-  apiKey: string;
 };
 
 export type ServerStatus = {
   backend: string;
   modelPath: string;
+  modelId: string;
   port: number;
   pid: number;
+  memoryBytes: number;
   running: boolean;
+  state: "loading" | "ready";
 };
 
+export type ServerStartFailure = {
+  port: number;
+  modelId: string;
+  modelPath: string;
+  error: string;
+};
+
+export type GatewayConfig = {
+  port: number;
+  serveOnLocalNetwork: boolean;
+  apiKeyEnabled: boolean;
+  apiKey: string;
+  corsEnabled: boolean;
+};
+
+export const configureGateway = (config: GatewayConfig) =>
+  invoke<void>("configure_gateway", { config });
+
+export const gatewayStatus = () => invoke<boolean>("gateway_status");
+
 export const listModels = () => invoke<ModelInfo[]>("list_models");
+
+export const loadModelSettings = (modelPath: string) =>
+  invoke<ModelSettingsFile | null>("load_model_settings", { modelPath });
+
+export const saveModelSettings = (
+  modelPath: string,
+  settings: ModelSettingsFile,
+) => invoke<void>("save_model_settings", { modelPath, settings });
+
+export const deleteModel = (modelPath: string) =>
+  invoke<void>("delete_model", { modelPath });
 
 export const startServer = (config: ServerConfig) =>
   invoke<ServerStatus>("start_server", { config });
 
 export const stopServer = (port: number) =>
   invoke<ServerStatus>("stop_server", { port });
+
+export const updateServerInference = (
+  port: number,
+  defaults: LiveInferenceDefaults,
+) => invoke<void>("update_server_inference", { port, defaults });
 
 export const listServers = () => invoke<ServerStatus[]>("list_servers");
 
@@ -63,6 +106,12 @@ export const searchHuggingFaceModels = (query: string) =>
 export const huggingFaceModelFiles = (repoId: string) =>
   invoke<HuggingFaceRepoDetails>("huggingface_model_files", { repoId });
 
+export const searchModelScopeModels = (query: string) =>
+  invoke<HuggingFaceModelSummary[]>("search_modelscope_models", { query });
+
+export const modelScopeModelFiles = (repoId: string) =>
+  invoke<HuggingFaceRepoDetails>("modelscope_model_files", { repoId });
+
 export const downloadHuggingFaceFile = (
   repoId: string,
   filename: string,
@@ -70,6 +119,19 @@ export const downloadHuggingFaceFile = (
   pipelineTag: string | null,
 ) =>
   invoke<DownloadedModel>("download_huggingface_file", {
+    repoId,
+    filename,
+    tags,
+    pipelineTag,
+  });
+
+export const downloadModelScopeFile = (
+  repoId: string,
+  filename: string,
+  tags: string[],
+  pipelineTag: string | null,
+) =>
+  invoke<DownloadedModel>("download_modelscope_file", {
     repoId,
     filename,
     tags,

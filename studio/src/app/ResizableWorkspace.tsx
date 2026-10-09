@@ -27,10 +27,10 @@ export function ResizableWorkspace({
 
   const fallback =
     layoutMode === "modelSearchBrowse"
-      ? "20% 0 minmax(0, 1fr) 0 0"
+      ? "220px 0 minmax(0, 1fr) 0 0"
       : layoutMode === "modelSearchDetail"
-        ? "20% 0 minmax(360px, 42%) 0 minmax(480px, 58%)"
-        : "20% 0 minmax(0, 1fr) 0 20%";
+        ? "220px 0 minmax(360px, 42%) 0 minmax(480px, 58%)"
+        : "220px 0 minmax(0, 1fr) 0 320px";
 
   const style: CSSProperties = {
     gridTemplateColumns:

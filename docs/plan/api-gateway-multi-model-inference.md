@@ -1,0 +1,820 @@
+# TideStudio API Gateway Multi-Model Inference Plan
+
+## Goal
+
+Make TideStudio expose one stable API endpoint while running each loaded model in its own private llama.cpp worker.
+
+Public shape:
+
+```text
+OpenAI / Anthropic clients
+        |
+        v
+TideStudio API gateway
+http://<host>:<public-port>
+        |
+        +--> model A -> llama-server 127.0.0.1:<worker-port-A>
+        +--> model B -> llama-server 127.0.0.1:<worker-port-B>
+        +--> model C -> llama-server 127.0.0.1:<worker-port-C>
+```
+
+The Go process is the only public network surface. llama.cpp workers remain loopback-only implementation details.
+
+## Verified runtime behavior
+
+The bundled runtime is:
+
+- llama.cpp `0.6.0-dev`
+- build `11429`
+- commit `d81235049`
+
+The bundled `llama-server` was tested locally with the managed Qwen3.5 GGUF and successfully served:
+
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- `POST /v1/messages`
+- `GET /v1/models`
+
+It also supports `--alias`, and `/v1/models` reports that alias instead of the underlying GGUF path.
+
+This means the gateway should not translate OpenAI requests into Anthropic requests, or vice versa. For the supported routes, it should route the request to the selected worker and preserve llama.cpp's native protocol implementation, including streaming.
+
+## Core design decisions
+
+### 1. One public API gateway, many private llama.cpp workers
+
+The API gateway owns the public host and port, authentication, CORS, model routing, public model listing, and proxy errors.
+
+Rust/Tauri continues to own local process management:
+
+- locate binaries
+- allocate worker ports
+- launch llama.cpp
+- stop llama.cpp
+- capture llama.cpp logs
+- launch and stop the API gateway process
+- register/unregister workers with the gateway
+
+This preserves the existing `InferenceBackend` boundary and avoids moving desktop/process responsibilities into a second runtime.
+
+### 2. Workers always bind to loopback
+
+Every llama.cpp worker launches with:
+
+```text
+--host 127.0.0.1
+--port <internal worker port>
+--alias <stable TideStudio model id>
+--no-webui
+```
+
+Public LAN binding, API keys, and CORS no longer belong on individual llama.cpp workers.
+
+Those settings belong only to the API gateway.
+
+### 3. Stable public model IDs
+
+Do not expose absolute filesystem paths as API model names.
+
+Add a stable `model_id` derived from the path relative to TideStudio's managed `models/` directory, with normalized forward slashes and the `.gguf` suffix removed.
+
+Example:
+
+```text
+models/unsloth/Qwen3.5-2B-MTP-GGUF/Qwen3.5-2B-Q3_K_S.gguf
+
+-> unsloth/Qwen3.5-2B-MTP-GGUF/Qwen3.5-2B-Q3_K_S
+```
+
+Pass that ID to llama.cpp through `--alias`.
+
+The same ID is used by:
+
+- `GET /v1/models`
+- the public request `model` field
+- the Go routing table
+- Rust worker status
+- frontend loaded-model identity
+
+One active worker per public model ID is the initial policy. Loading the same model twice should return the existing loaded instance rather than creating ambiguous duplicate routes.
+
+### 4. Native protocol passthrough
+
+Public model-specific routes:
+
+```text
+POST /v1/chat/completions
+POST /v1/responses
+POST /v1/messages
+POST /v1/completions
+POST /v1/embeddings
+```
+
+For each request, Go:
+
+1. reads the JSON body with a bounded request size
+2. extracts only the top-level `model`
+3. resolves `model -> worker URL`
+4. forwards the original request body to the same path on that worker
+5. streams the upstream response directly back to the client
+
+Do not convert the request or response schema when llama.cpp already supports the route.
+
+This keeps tool calling, reasoning fields, multimodal content, Anthropic content blocks, Responses API items, and future llama.cpp protocol improvements in llama.cpp instead of duplicating them in TideStudio.
+
+### 5. Streaming stays streaming
+
+Use Go's reverse-proxy primitives with immediate flushing for SSE/chunked responses.
+
+The gateway must not buffer a full inference response before returning it.
+
+Cancellation from the public client must cancel the upstream worker request.
+
+### 6. Gateway owns authentication
+
+If authentication is enabled, the same TideStudio API key is accepted through:
+
+- `Authorization: Bearer <key>`
+- `x-api-key: <key>`
+
+This lets OpenAI-style and Anthropic-style SDKs target the same gateway.
+
+After authentication succeeds, public credential headers should not be forwarded to the private llama.cpp worker.
+
+Never log API-key values.
+
+### 7. Gateway owns CORS and LAN exposure
+
+`ServerSettings.port` becomes the public gateway port.
+
+`serveOnLocalNetwork` selects:
+
+- false -> gateway binds `127.0.0.1`
+- true -> gateway binds `0.0.0.0`
+
+All llama.cpp workers remain `127.0.0.1` regardless of this setting.
+
+`corsEnabled` is implemented by the API gateway, not by llama.cpp worker flags.
+
+### 8. Gateway aggregates /v1/models
+
+`GET /v1/models` is generated by the Go registry rather than proxied to one worker.
+
+It returns every currently registered and loaded model without leaking:
+
+- worker ports
+- absolute GGUF paths
+- process IDs
+
+At minimum each entry returns:
+
+```json
+{
+  "id": "unsloth/Qwen3.5-2B-MTP-GGUF/Qwen3.5-2B-Q3_K_S",
+  "object": "model",
+  "owned_by": "tidestudio"
+}
+```
+
+### 9. Private gateway control route
+
+Rust needs a small control plane to update the Go routing table.
+
+Keep it on the same listener to avoid introducing a second port, but make it inaccessible as a public API:
+
+```text
+PUT    /_tidestudio/workers/{model_id}
+DELETE /_tidestudio/workers/{model_id}
+GET    /_tidestudio/workers
+```
+
+Requirements:
+
+- requests must originate from loopback
+- requests must include a random per-process internal control token
+- non-loopback requests return 404
+- token is generated by Rust when starting the gateway
+- token is passed to Go through an environment variable, not logged
+- the control API accepts only loopback worker URLs
+
+Registration payload:
+
+```json
+{
+  "model_id": "unsloth/Qwen3.5-2B-MTP-GGUF/Qwen3.5-2B-Q3_K_S",
+  "base_url": "http://127.0.0.1:52341"
+}
+```
+
+### 10. Worker readiness is explicit
+
+Rust process startup returns immediately after spawning llama.cpp and records the worker as `loading`.
+
+Readiness polling runs independently from the UI and shared registry lock while also checking whether the child process exited.
+
+Only after readiness succeeds does Rust register the worker with the API gateway and transition the worker to `ready`.
+
+If readiness or registration fails:
+
+1. stop the worker
+2. remove any partial gateway route
+3. emit the actual startup error to the frontend
+
+### 11. Internal worker ports are no longer frontend-managed
+
+The frontend currently starts from `ServerSettings.port` and increments until it finds an unused TideStudio-managed port.
+
+Remove that behavior.
+
+Rust owns internal port allocation.
+
+The allocator should:
+
+- bind/probe loopback only
+- avoid ports already owned by the registry
+- retry another candidate if llama.cpp fails to bind
+- keep worker ports out of public server settings
+
+The public port and worker ports become completely separate concepts.
+
+## Request flow
+
+### Loading a model
+
+```text
+React: Load Model
+  |
+  v
+Tauri start_server(model launch config)
+  |
+  +--> ensure API gateway is running with current public settings
+  |
+  +--> derive stable model_id
+  |
+  +--> allocate internal loopback port
+  |
+  +--> InferenceBackend::start(...)
+  |      |
+  |      +--> llama-server
+  |           --host 127.0.0.1
+  |           --port <worker>
+  |           --alias <model_id>
+  |
+  +--> return ServerStatus(state=loading)
+  |
+  +--> background readiness task
+         |
+         +--> wait for worker readiness
+         +--> register model_id -> worker URL with API gateway
+         +--> mark ServerStatus(state=ready)
+  |
+  v
+React updates Loading -> Ready
+```
+
+### Inference
+
+```text
+POST http://localhost:8080/v1/responses
+{
+  "model": "unsloth/.../Qwen3.5-2B-Q3_K_S",
+  ...
+}
+  |
+  v
+Go authenticates request
+  |
+  v
+Go resolves model_id
+  |
+  v
+proxy same request/path
+  |
+  v
+http://127.0.0.1:<worker>/v1/responses
+  |
+  v
+llama.cpp response/stream
+  |
+  v
+Go streams it to the caller
+```
+
+The same routing path applies to `/v1/chat/completions` and `/v1/messages`.
+
+### Unloading a model
+
+```text
+React: Eject
+  |
+  v
+Rust unregisters model route from Go
+  |
+  v
+Rust stops llama.cpp worker
+  |
+  v
+ServerRegistry removes worker
+```
+
+If gateway unregister fails because the gateway has already stopped, Rust should still terminate the local worker and report the gateway problem separately rather than orphaning the process.
+
+## Public error behavior
+
+Routing/auth errors generated by Go should match the selected protocol family.
+
+OpenAI-compatible paths:
+
+```json
+{
+  "error": {
+    "message": "model is not loaded",
+    "type": "invalid_request_error",
+    "code": "model_not_loaded"
+  }
+}
+```
+
+Anthropic `/v1/messages`:
+
+```json
+{
+  "type": "error",
+  "error": {
+    "type": "not_found_error",
+    "message": "model is not loaded"
+  }
+}
+```
+
+Upstream llama.cpp errors should otherwise pass through unchanged.
+
+## Gateway lifecycle
+
+The API gateway is a TideStudio sidecar, not a user-launched daemon.
+
+Rust owns its child process.
+
+Recommended behavior:
+
+- start/ensure the gateway when the Server workspace initializes or before the first model load
+- keep it running when zero models are loaded so `/health` and `/v1/models` remain valid
+- restart it only when public network/auth/CORS settings are applied
+- after a gateway restart, re-register every still-running Rust-managed worker
+- stop it during TideStudio shutdown
+- ensure worker and gateway child processes are terminated when their owning manager is dropped
+
+The current Server Settings dialog edits values live. For gateway settings, use an explicit Apply action so typing a port or API key does not restart the public API process on every keystroke.
+
+## Endpoint panel behavior
+
+Update Supported Endpoints to describe the TideStudio gateway rather than each llama.cpp worker.
+
+Initial public routes:
+
+OpenAI-compatible:
+
+- `GET /v1/models`
+- `POST /v1/responses`
+- `POST /v1/chat/completions`
+- `POST /v1/completions`
+- `POST /v1/embeddings`
+
+Anthropic-compatible:
+
+- `POST /v1/messages`
+
+TideStudio:
+
+- `GET /health`
+
+Do not publicly expose worker-specific llama.cpp routes such as `/slots`, `/props`, or `/completion` in this phase because they do not have a consistent multi-model selection contract.
+
+## Deliberately deferred
+
+Do not mix these into the first gateway implementation:
+
+- JIT loading of an unloaded model from an inference request
+- automatic idle unload
+- multiple replicas of the same model ID
+- load balancing across replicas
+- remote workers
+- protocol translation for routes llama.cpp already implements
+- public llama.cpp-native worker-management endpoints
+- MCP orchestration
+
+The registry/control boundary leaves room for JIT later without changing the public inference URL.
+
+## Planned project structure
+
+Expected relevant structure after implementation:
+
+```text
+D:\tidestudio
+├─ studio/api-gateway/
+│  ├─ go.mod
+│  ├─ cmd/
+│  │  └─ api-gateway/
+│  │     └─ main.go
+│  └─ internal/
+│     ├─ config/
+│     │  └─ config.go
+│     ├─ registry/
+│     │  ├─ registry.go
+│     │  └─ registry_test.go
+│     └─ httpapi/
+│        ├─ server.go
+│        ├─ routes.go
+│        ├─ proxy.go
+│        ├─ auth.go
+│        ├─ control.go
+│        ├─ errors.go
+│        ├─ server_test.go
+│        └─ proxy_test.go
+├─ studio/
+│  ├─ scripts/
+│  │  └─ build-api-gateway.mjs
+│  ├─ runtime/
+│  │  ├─ llama.cpp/
+│  │  └─ tidestudio-api-gateway/
+│  │     └─ <generated gateway binary>
+│  ├─ src-tauri/
+│  │  └─ src/
+│  │     ├─ commands/
+│  │     │  └─ server.rs
+│  │     └─ core/
+│  │        ├─ backends/
+│  │        │  ├─ inference_backend.rs
+│  │        │  └─ llama_cpp/
+│  │        │     ├─ backend.rs
+│  │        │     ├─ manager.rs
+│  │        │     └─ process.rs
+│  │        ├─ config/
+│  │        │  ├─ mod.rs
+│  │        │  ├─ gateway_config.rs
+│  │        │  ├─ model_launch_config.rs
+│  │        │  └─ worker_config.rs
+│  │        ├─ gateway/
+│  │        │  ├─ mod.rs
+│  │        │  ├─ client.rs
+│  │        │  ├─ manager.rs
+│  │        │  └─ process.rs
+│  │        ├─ models/
+│  │        │  ├─ discovery.rs
+│  │        │  └─ types.rs
+│  │        └─ servers/
+│  │           ├─ registry.rs
+│  │           └─ port_allocator.rs
+│  ├─ src/
+│  │  ├─ app/App.tsx
+│  │  ├─ features/server/
+│  │  │  ├─ ServerDashboard.tsx
+│  │  │  ├─ ServerSettingsDialog.tsx
+│  │  │  └─ SupportedEndpointsPanel.tsx
+│  │  └─ lib/
+│  │     ├─ config.ts
+│  │     └─ tauri.ts
+│  └─ package.json
+├─ ARCHITECTURE.md
+└─ docs/plan/api-gateway-multi-model-inference.md
+```
+
+## File-by-file change list
+
+### New API gateway
+
+- **Create `studio/api-gateway/go.mod`**
+  - standalone Go module
+  - prefer standard library only for the initial gateway
+
+- **Create `studio/api-gateway/cmd/tidestudio-api-gateway/main.go`**
+  - parse process configuration
+  - construct registry and HTTP server
+  - handle process shutdown
+
+- **Create `studio/api-gateway/internal/config/config.go`**
+  - public bind host/port
+  - API-key settings
+  - CORS setting
+  - internal control token
+  - environment parsing and validation
+
+- **Create `studio/api-gateway/internal/registry/registry.go`**
+  - concurrency-safe `model_id -> worker` map
+  - register, unregister, resolve, list
+  - reject duplicate/conflicting registrations
+
+- **Create `studio/api-gateway/internal/registry/registry_test.go`**
+  - registry concurrency and duplicate behavior
+
+- **Create `studio/api-gateway/internal/httpapi/server.go`**
+  - HTTP server construction
+  - middleware composition
+  - timeout policy suitable for long-running inference and SSE
+
+- **Create `studio/api-gateway/internal/httpapi/routes.go`**
+  - public route table
+  - route-family classification
+
+- **Create `studio/api-gateway/internal/httpapi/proxy.go`**
+  - extract model
+  - resolve worker
+  - same-path reverse proxy
+  - SSE flushing
+  - strip public credential headers before upstream forwarding
+
+- **Create `studio/api-gateway/internal/httpapi/auth.go`**
+  - Bearer and `x-api-key` validation
+  - constant-time secret comparison
+
+- **Create `studio/api-gateway/internal/httpapi/control.go`**
+  - loopback-only worker registration API
+  - internal token check
+  - validate worker URLs are loopback HTTP endpoints
+
+- **Create `studio/api-gateway/internal/httpapi/errors.go`**
+  - OpenAI-family and Anthropic-family gateway-generated error shapes
+
+- **Create `studio/api-gateway/internal/httpapi/server_test.go`**
+  - auth
+  - CORS
+  - health
+  - model list
+  - control-route isolation
+
+- **Create `studio/api-gateway/internal/httpapi/proxy_test.go`**
+  - route model A and B to different `httptest` workers
+  - request body preservation
+  - header preservation/removal
+  - streaming/SSE flush
+  - client cancellation
+
+### Rust/Tauri core
+
+- **Modify `studio/src-tauri/Cargo.toml`**
+  - enable reqwest's blocking client feature for localhost gateway control calls
+  - do not add a second HTTP client dependency
+
+- **Create `studio/src-tauri/src/core/config/gateway_config.rs`**
+  - typed public gateway host/port/auth/CORS config
+
+- **Create `studio/src-tauri/src/core/config/model_launch_config.rs`**
+  - model-specific llama.cpp settings currently carried by `ServerConfig`
+  - no public network settings
+
+- **Create `studio/src-tauri/src/core/config/worker_config.rs`**
+  - internal model ID, loopback host, worker port, and model launch config
+
+- **Modify `studio/src-tauri/src/core/config/mod.rs`**
+  - export the new config types
+
+- **Delete `studio/src-tauri/src/core/config/server_config.rs`**
+  - replaced by the explicit public gateway/model launch/worker configuration split
+
+- **Modify `studio/src-tauri/src/core/backends/inference_backend.rs`**
+  - start a `WorkerConfig`
+  - keep the backend-neutral process boundary
+
+- **Modify `studio/src-tauri/src/core/backends/llama_cpp/backend.rs`**
+  - consume worker config
+  - preserve llama.cpp-specific startup behavior
+
+- **Modify `studio/src-tauri/src/core/backends/llama_cpp/process.rs`**
+  - force loopback host
+  - use internal worker port
+  - pass stable `--alias`
+  - disable web UI
+  - remove worker API-key handling
+  - wait for worker readiness before returning success
+
+- **Modify `studio/src-tauri/src/core/backends/llama_cpp/manager.rs`**
+  - keep binary resolution
+  - add no public networking responsibility
+
+- **Create `studio/src-tauri/src/core/servers/port_allocator.rs`**
+  - allocate private loopback worker ports
+  - retry conflicts
+
+- **Modify `studio/src-tauri/src/core/servers/registry.rs`**
+  - key running workers by stable model ID instead of treating port as identity
+  - retain worker port/PID as internal status fields
+  - expose the data needed to rebuild Go registrations after gateway restart
+
+- **Create `studio/src-tauri/src/core/gateway/process.rs`**
+  - resolve and spawn the API gateway process
+  - inject API key and internal control token without logging secrets
+  - capture gateway logs
+  - terminate child on shutdown
+
+- **Create `studio/src-tauri/src/core/gateway/client.rs`**
+  - blocking localhost control client
+  - register/unregister/list workers
+  - gateway health check
+
+- **Create `studio/src-tauri/src/core/gateway/manager.rs`**
+  - ensure/restart gateway from public settings
+  - maintain control token
+  - re-register active workers after restart
+
+- **Create `studio/src-tauri/src/core/gateway/mod.rs`**
+  - gateway module exports
+
+- **Modify `studio/src-tauri/src/core/mod.rs`**
+  - register gateway module
+
+- **Modify `studio/src-tauri/src/core/models/types.rs`**
+  - add stable public `model_id`
+
+- **Modify `studio/src-tauri/src/core/models/discovery.rs`**
+  - derive `model_id` from the managed relative GGUF path
+
+- **Modify `studio/src-tauri/src/commands/server.rs`**
+  - add gateway start/reconfigure/status commands
+  - load flow: ensure gateway -> start ready worker -> register route
+  - unload flow: unregister route -> stop worker
+  - transactional cleanup on partial failure
+
+- **Modify `studio/src-tauri/src/lib.rs`**
+  - store `GatewayManager` in app state
+  - register new Tauri commands
+  - ensure gateway/workers are cleaned up on shutdown
+
+### Frontend
+
+- **Modify `studio/src/lib/config.ts`**
+  - keep `ServerSettings.port` as the public gateway port
+  - make the public/private distinction explicit in types/comments
+
+- **Modify `studio/src/lib/tauri.ts`**
+  - add `modelId` and internal `workerPort` to server status
+  - remove public host/port/API key from per-model launch payload
+  - add gateway status/config command bindings
+
+- **Modify `studio/src/app/App.tsx`**
+  - remove frontend worker-port allocation
+  - identify running workers by model ID
+  - configure/start the gateway independently from model loading
+  - keep selected-worker logs working through internal worker identity
+
+- **Modify `studio/src/features/server/ServerDashboard.tsx`**
+  - Reachable at always shows the API gateway endpoint
+  - server status reflects gateway state separately from number of loaded models
+  - loaded-model actions use stable model IDs
+
+- **Modify `studio/src/features/server/ServerSettingsDialog.tsx`**
+  - public port/auth/LAN/CORS explicitly describe gateway settings
+  - apply changes as one operation rather than restarting while fields are being edited
+
+- **Modify `studio/src/features/server/SupportedEndpointsPanel.tsx`**
+  - describe TideStudio gateway routes
+  - remove worker-only llama.cpp native routes from the public list
+
+### Build and project docs
+
+- **Create `studio/scripts/build-api-gateway.mjs`**
+  - build the correct API gateway process filename for the current platform into `studio/runtime/api-gateway/`
+
+- **Modify `studio/package.json`**
+  - add gateway build command
+  - include gateway build in the desktop build path when appropriate
+
+- **Modify `studio/.gitignore`**
+  - ignore generated gateway binaries if they are build outputs
+
+- **Modify `ARCHITECTURE.md`**
+  - replace the planned gateway description with the implemented public/private topology once implementation is complete
+
+- **Keep `docs/plan/api-gateway-multi-model-inference.md`**
+  - this implementation plan and decision record
+
+## Implementation phases
+
+### Phase 1: API gateway in isolation
+
+Build and test:
+
+- route registry
+- `/health`
+- aggregated `/v1/models`
+- authentication
+- CORS
+- same-path proxying
+- SSE streaming
+- internal control API
+- protocol-family error responses
+
+Verify against two mock upstream workers before involving Tauri.
+
+### Phase 2: Stable model identity and private workers
+
+Refactor Rust configuration and registry:
+
+- stable model IDs
+- internal worker-port allocation
+- loopback-only llama.cpp workers
+- `--alias`
+- worker readiness wait
+- no worker API keys or LAN binding
+
+Verify one real GGUF worker directly.
+
+### Phase 3: Rust API gateway process integration
+
+Add:
+
+- Go binary resolver/spawner
+- gateway manager
+- registration client
+- transactional load/unload
+- re-registration after gateway restart
+- shutdown cleanup
+
+Verify:
+
+```text
+gateway -> worker A
+gateway -> worker B
+```
+
+using two registry entries and at least one real llama.cpp process.
+
+### Phase 4: Frontend semantics
+
+Update Server UI so:
+
+- one public endpoint is always shown
+- public gateway status is distinct from loaded model count
+- model load no longer chooses public ports
+- gateway settings apply intentionally
+- endpoint documentation reflects the gateway
+
+### Phase 5: Compatibility verification
+
+Run real requests through the API gateway for:
+
+1. OpenAI Chat Completions, non-streaming
+2. OpenAI Chat Completions, streaming
+3. OpenAI Responses, non-streaming
+4. OpenAI Responses, streaming
+5. Anthropic Messages, non-streaming
+6. Anthropic Messages, streaming
+7. invalid/missing model
+8. stopped worker
+9. client cancellation
+10. API-key success/failure
+11. two models selected by different `model` IDs
+12. `GET /v1/models` with zero, one, and multiple loaded models
+
+## Verification commands
+
+Go:
+
+```text
+cd studio/api-gateway
+go test ./...
+go vet ./...
+go build ./cmd/tidestudio-api-gateway
+```
+
+Rust:
+
+```text
+cd studio/src-tauri
+cargo fmt --check
+cargo test
+cargo check
+```
+
+Frontend:
+
+```text
+cd studio
+npm run build
+```
+
+End-to-end:
+
+- start TideStudio gateway on the configured public port
+- load a managed GGUF
+- confirm worker binds only to `127.0.0.1:<internal-port>`
+- confirm public API uses only the gateway port
+- call all three target protocol families through the gateway
+- confirm response model ID is the TideStudio alias, never an absolute path
+- unload the model and confirm subsequent calls return a model-not-loaded error
+- restart the gateway while a worker remains loaded and confirm Rust re-registers it
+
+## Acceptance criteria
+
+The implementation is complete when:
+
+- users configure exactly one TideStudio API base URL
+- every loaded model may run on a different internal llama.cpp port
+- clients choose the worker using the normal `model` request field
+- `/v1/chat/completions`, `/v1/responses`, and `/v1/messages` all work through the same public port
+- streaming works without buffering
+- `/v1/models` lists all loaded TideStudio model IDs
+- absolute model paths and internal worker ports are not part of the public API
+- LAN/auth/CORS are enforced only by the API gateway
+- llama.cpp workers are loopback-only
+- failed startup/registration does not leave orphaned routes or workers
+- stopping/restarting the public gateway does not require restarting healthy loaded models

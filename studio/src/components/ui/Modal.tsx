@@ -11,6 +11,7 @@ type Props = {
   children: ReactNode;
   onClose: () => void;
   className?: string;
+  overlayClassName?: string;
 };
 
 export function Modal({
@@ -19,6 +20,7 @@ export function Modal({
   children,
   onClose,
   className = "",
+  overlayClassName = "",
 }: Props) {
   useEffect(() => {
     if (!open) {
@@ -41,7 +43,7 @@ export function Modal({
 
   return (
     <div
-      className="ui-modal-overlay"
+      className={["ui-modal-overlay", overlayClassName].filter(Boolean).join(" ")}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {

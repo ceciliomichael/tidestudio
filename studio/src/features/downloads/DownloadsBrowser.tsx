@@ -3,6 +3,7 @@ import {
   Download,
   Heart,
   Search,
+  X,
 } from "lucide-react";
 import {
   useEffect,
@@ -10,15 +11,26 @@ import {
   useState,
 } from "react";
 import { InputField } from "../../components/ui/InputField";
-import type { HuggingFaceModelSummary } from "./types";
+import { Dropdown } from "../../components/ui/Dropdown";
+import type {
+  HuggingFaceModelSummary,
+  ModelSearchSource,
+} from "./types";
 
 type Props = {
   models: HuggingFaceModelSummary[];
+  source: ModelSearchSource;
   selectedRepoId: string | null;
   searching: boolean;
   onSearch: (query: string) => void;
+  onSourceChange: (source: ModelSearchSource, query: string) => void;
   onSelect: (model: HuggingFaceModelSummary) => void;
 };
+
+const SOURCE_OPTIONS = [
+  { value: "huggingface", label: "Hugging Face" },
+  { value: "modelscope", label: "ModelScope" },
+] satisfies Array<{ value: ModelSearchSource; label: string }>;
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat("en", {
@@ -39,32 +51,56 @@ function publisherInitial(model: HuggingFaceModelSummary) {
   return publisherName(model).trim().charAt(0).toUpperCase() || "H";
 }
 
-function visibleTags(model: HuggingFaceModelSummary) {
-  return model.tags
-    .filter(
-      (tag) =>
-        !tag.includes(":") &&
-        tag.toLowerCase() !== "gguf" &&
-        tag.toLowerCase() !== "transformers",
-    )
-    .slice(0, 1);
+function modelBadges(model: HuggingFaceModelSummary) {
+  const seen = new Set(["gguf", model.visionCapable ? "vision" : "text"]);
+  const ignored = new Set([
+    "transformers",
+    "safetensors",
+    "endpoints_compatible",
+  ]);
+
+  return [model.pipelineTag, ...model.tags]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .map((value) => value.trim())
+    .filter((value) => {
+      const normalized = value.toLowerCase();
+      if (
+        seen.has(normalized) ||
+        ignored.has(normalized) ||
+        normalized.includes(":") ||
+        value.length > 24
+      ) {
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    })
+    .slice(0, 3);
 }
 
 export function DownloadsBrowser({
   models,
+  source,
   selectedRepoId,
   searching,
   onSearch,
+  onSourceChange,
   onSelect,
 }: Props) {
   const [query, setQuery] = useState("");
   const onSearchRef = useRef(onSearch);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
     onSearchRef.current = onSearch;
   }, [onSearch]);
 
   useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       onSearchRef.current(query.trim());
     }, 350);
@@ -72,55 +108,105 @@ export function DownloadsBrowser({
     return () => window.clearTimeout(timer);
   }, [query]);
 
+  const showSearchState =
+    searching && (query.trim().length > 0 || models.length === 0);
+
   return (
     <section className="downloads-browser">
       <div className="model-search-toolbar">
-        <div className="model-search-field">
-          <Search
-            className="model-search-field__icon"
-            size={16}
-            strokeWidth={1.9}
-            aria-hidden="true"
-          />
-          <InputField
-            label="Search Hugging Face"
-            type="search"
-            value={query}
-            placeholder="Search models by name or author..."
-            autoComplete="off"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {searching ? (
-            <span className="model-search-field__state">Searching</span>
-          ) : null}
-        </div>
-
-        <div className="model-search-results-bar">
+        <div className="page-heading">
           <div>
-            <strong>Hugging Face GGUF</strong>
-            <span>
-              {query.trim()
-                ? "Results for " + query.trim()
-                : "Popular compatible models"}
-            </span>
+            <h1>Model Search</h1>
+            <p>Discover and download llama.cpp-compatible GGUF models.</p>
           </div>
-          <div className="model-search-results-bar__meta">
-            {searching ? <span>Searching</span> : null}
-            <span>{models.length} models</span>
+          <span>{models.length} models</span>
+        </div>
+        <div className="model-search-controls">
+          <div className="model-search-field">
+            <Search
+              className="model-search-field__icon"
+              size={16}
+              strokeWidth={1.9}
+              aria-hidden="true"
+            />
+            <InputField
+              label="Search models"
+              type="search"
+              value={query}
+              placeholder="Search models by name or author..."
+              autoComplete="off"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {query ? (
+              <button
+                className="model-search-field__clear"
+                type="button"
+                aria-label="Clear model search"
+                onClick={() => setQuery("")}
+              >
+                <X size={14} strokeWidth={1.9} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+
+          <div className="model-search-source">
+            <Dropdown
+              ariaLabel="Model source"
+              value={source}
+              options={SOURCE_OPTIONS}
+              onChange={(nextSource) => {
+                onSourceChange(nextSource, query.trim());
+              }}
+            />
           </div>
         </div>
       </div>
 
       <div className="downloads-results">
-        {models.length === 0 && !searching ? (
+        {showSearchState ? (
+          <div className="downloads-search-state" aria-hidden="true">
+            {Array.from({ length: 7 }, (_, index) => (
+              <div
+                className="downloads-result downloads-result--skeleton"
+                key={index}
+              >
+                <span className="downloads-result__avatar downloads-skeleton__avatar" />
+
+                <div className="downloads-result__copy">
+                  <div className="downloads-result__identity">
+                    <span className="downloads-skeleton__name" />
+                    <span className="downloads-skeleton__publisher" />
+                  </div>
+
+                  <div className="downloads-result__meta">
+                    <span className="downloads-skeleton__badge downloads-skeleton__badge--format" />
+                    <span className="downloads-skeleton__badge downloads-skeleton__badge--vision" />
+                  </div>
+                </div>
+
+                <div className="downloads-result__metrics">
+                  <span>
+                    <span className="downloads-skeleton__metric-icon" />
+                    <span className="downloads-skeleton__metric-value" />
+                  </span>
+                  <span>
+                    <span className="downloads-skeleton__metric-icon" />
+                    <span className="downloads-skeleton__metric-value downloads-skeleton__metric-value--short" />
+                  </span>
+                </div>
+
+                <span className="downloads-skeleton__chevron" />
+              </div>
+            ))}
+          </div>
+        ) : models.length === 0 && !searching ? (
           <div className="downloads-empty">
             No matching public GGUF repositories found.
           </div>
         ) : null}
 
-        {models.map((model) => {
-          const tags = visibleTags(model);
-
+        {!showSearchState ? models.map((model) => {
+          const badges = modelBadges(model);
           return (
             <button
               className={
@@ -144,11 +230,20 @@ export function DownloadsBrowser({
 
                 <div className="downloads-result__meta">
                   <span className="downloads-result__format">GGUF</span>
-                  {model.pipelineTag ? (
-                    <span>{model.pipelineTag}</span>
-                  ) : tags[0] ? (
-                    <span>{tags[0]}</span>
-                  ) : null}
+                  <span
+                    className={
+                      model.visionCapable
+                        ? "downloads-result__vision is-capable"
+                        : "downloads-result__vision"
+                    }
+                  >
+                    {model.visionCapable ? "Vision" : "Text"}
+                  </span>
+                  {badges.map((badge) => (
+                    <span className="downloads-result__tag" key={badge}>
+                      {badge}
+                    </span>
+                  ))}
                 </div>
               </div>
 
@@ -171,7 +266,7 @@ export function DownloadsBrowser({
               />
             </button>
           );
-        })}
+        }) : null}
       </div>
     </section>
   );

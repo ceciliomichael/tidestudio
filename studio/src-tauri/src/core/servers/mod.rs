@@ -1,3 +1,3 @@
 mod registry;
 
-pub use registry::{ServerRegistry, ServerStatus};
+pub use registry::{ServerLifecycle, ServerRegistry, ServerStatus};

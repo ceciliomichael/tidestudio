@@ -1,8 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Boxes, Download, Server } from "lucide-react";
-import { IconButton } from "../components/ui/IconButton";
-import { StatusBadge } from "../components/ui/StatusBadge";
+import { Download } from "lucide-react";
 import { DownloadActivityPopover } from "../features/downloads/DownloadActivityPopover";
 import { DownloadInspector } from "../features/downloads/DownloadInspector";
 import { DownloadsBrowser } from "../features/downloads/DownloadsBrowser";
@@ -13,6 +11,7 @@ import type {
   HuggingFaceFile,
   HuggingFaceModelSummary,
   HuggingFaceRepoDetails,
+  ModelSearchSource,
 } from "../features/downloads/types";
 import { ModelLibrary } from "../features/models/ModelLibrary";
 import { ModelInspector } from "../features/models/ModelInspector";
@@ -21,21 +20,43 @@ import { ServerDashboard } from "../features/server/ServerDashboard";
 import {
   createDefaultModelConfig,
   createDefaultServerSettings,
+  liveInferenceDefaultsFromConfig,
+  modelConfigFromSettingsFile,
+  modelConfigToSettingsFile,
   type ModelConfig,
 } from "../lib/config";
 import {
+  configureGateway,
+  deleteModel,
   downloadHuggingFaceFile,
+  downloadModelScopeFile,
+  gatewayStatus,
+  getUiPreference,
   huggingFaceModelFiles,
+  loadModelSettings,
   listModels,
   listServers,
+  modelScopeModelFiles,
   searchHuggingFaceModels,
+  searchModelScopeModels,
   serverLogs,
+  saveModelSettings,
+  setUiPreference,
   startServer,
   stopServer,
+  updateServerInference,
   type ModelInfo,
   type ServerConfig,
+  type ServerStartFailure,
   type ServerStatus,
 } from "../lib/tauri";
+
+function modelSearchCacheKey(source: ModelSearchSource) {
+  return `model_search.default_results.v3.${source}`;
+}
+
+const LEGACY_HUGGING_FACE_CACHE_KEY = "model_search.default_results.v2";
+const SERVER_SETTINGS_PREFERENCE_KEY = "server.settings.v1";
 import {
   NavigationPanel,
   type ActivePage,
@@ -63,6 +84,19 @@ function formatModified(modifiedMs: number | null) {
   return new Date(modifiedMs).toLocaleDateString();
 }
 
+function formatContextLength(contextLength: number | null) {
+  if (!contextLength || contextLength <= 0) {
+    return "Unknown";
+  }
+
+  if (contextLength >= 1024) {
+    const value = contextLength / 1024;
+    return `${Number.isInteger(value) ? value : value.toFixed(1)}k`;
+  }
+
+  return contextLength.toLocaleString();
+}
+
 function modelInfoToCatalog(model: ModelInfo): CatalogModel {
   return {
     id: model.path,
@@ -72,18 +106,23 @@ function modelInfoToCatalog(model: ModelInfo): CatalogModel {
     category: model.category,
     architecture: model.architecture ?? "Unknown",
     parameters: model.parameters ?? "Unknown",
+    contextLength: formatContextLength(model.contextLength),
     quantization: model.quantization ?? "Unknown",
     size: formatModelSize(model.sizeBytes),
     modified: formatModified(model.modifiedMs),
     chatTemplate: model.chatTemplate,
+    supportsMtp: model.supportsMtp,
     supportsReasoning: model.supportsReasoning,
+    supportsVision: model.supportsVision,
   };
 }
 
-function createModelConfig(model: CatalogModel) {
+function createModelConfig(model: CatalogModel): ModelConfig {
   return {
     ...createDefaultModelConfig(),
     chatTemplate: model.chatTemplate ?? "",
+    speculativeMode: model.supportsMtp ? "mtp" : "none",
+    extraArgs: model.category === "Embedding" ? ["--embeddings"] : [],
   };
 }
 
@@ -99,11 +138,14 @@ function runtimeCatalogModel(server: ServerStatus): CatalogModel {
     category: "LLM",
     architecture: "Unknown",
     parameters: "Unknown",
-    quantization: "GGUF",
+    contextLength: "Unknown",
+    quantization: "Unknown",
     size: "Loaded",
     modified: "Running",
     chatTemplate: null,
+    supportsMtp: false,
     supportsReasoning: false,
+    supportsVision: false,
   };
 }
 
@@ -115,6 +157,7 @@ export function App() {
     Record<string, ModelConfig>
   >({});
   const [servers, setServers] = useState<ServerStatus[]>([]);
+  const [pendingModelPaths, setPendingModelPaths] = useState<string[]>([]);
   const [selectedServerPort, setSelectedServerPort] = useState<number | null>(
     null,
   );
@@ -122,9 +165,12 @@ export function App() {
   const [serverSettings, setServerSettings] = useState(
     createDefaultServerSettings,
   );
+  const [gatewayRunning, setGatewayRunning] = useState(false);
   const [huggingFaceModels, setHuggingFaceModels] = useState<
     HuggingFaceModelSummary[]
   >([]);
+  const [modelSearchSource, setModelSearchSource] =
+    useState<ModelSearchSource>("huggingface");
   const [selectedHuggingFaceRepoId, setSelectedHuggingFaceRepoId] = useState<
     string | null
   >(null);
@@ -146,6 +192,7 @@ export function App() {
       }
     >
   >({});
+  const modelSettingsSaveRef = useRef<Record<string, Promise<void>>>({});
   const [lastDownloadedModel, setLastDownloadedModel] =
     useState<DownloadedModel | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -192,11 +239,106 @@ export function App() {
   useEffect(() => {
     void refreshLocalModels();
     void refreshServers();
+    void restoreServerSettings();
+    void primeModelSearch();
   }, []);
+
+  async function searchModels(
+    source: ModelSearchSource,
+    query: string,
+  ) {
+    return source === "modelscope"
+      ? searchModelScopeModels(query)
+      : searchHuggingFaceModels(query);
+  }
+
+  async function primeModelSearch() {
+    let restored = false;
+    const cacheKey = modelSearchCacheKey("huggingface");
+
+    try {
+      const cached =
+        (await getUiPreference(cacheKey)) ??
+        (await getUiPreference(LEGACY_HUGGING_FACE_CACHE_KEY));
+      if (cached) {
+        const parsed = JSON.parse(cached) as HuggingFaceModelSummary[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const normalized = parsed.map((model) => ({
+            ...model,
+            source: "huggingface" as const,
+          }));
+          setHuggingFaceModels(normalized);
+          void setUiPreference(cacheKey, JSON.stringify(normalized));
+          restored = true;
+        }
+      }
+    } catch {
+      // Ignore stale or unreadable cache data and refresh from Hugging Face.
+    }
+
+    try {
+      const models = await searchHuggingFaceModels("");
+      if (models.length > 0) {
+        setHuggingFaceModels(models);
+        void setUiPreference(cacheKey, JSON.stringify(models));
+      }
+    } catch (cause) {
+      if (!restored) {
+        setError(String(cause));
+      }
+    }
+  }
+
+  async function restoreServerSettings() {
+    let settings = createDefaultServerSettings();
+    try {
+      const saved = await getUiPreference(SERVER_SETTINGS_PREFERENCE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<typeof settings>;
+        settings = {
+          ...settings,
+          ...parsed,
+        };
+      }
+    } catch {
+      // Keep defaults when persisted server settings are unavailable.
+    }
+    await applyGatewaySettings(settings, false);
+  }
+
+  async function applyGatewaySettings(
+    settings: ReturnType<typeof createDefaultServerSettings>,
+    persist = true,
+  ) {
+    try {
+      await configureGateway(settings);
+      setGatewayRunning(await gatewayStatus());
+      setServerSettings(settings);
+    } catch (cause) {
+      setGatewayRunning(false);
+      setError(String(cause));
+      return;
+    }
+
+    if (persist) {
+      try {
+        await setUiPreference(
+          SERVER_SETTINGS_PREFERENCE_KEY,
+          JSON.stringify(settings),
+        );
+      } catch (cause) {
+        setError(String(cause));
+        return;
+      }
+    }
+
+    setError(null);
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       void refreshServers();
+      void gatewayStatus().then(setGatewayRunning).catch(() => setGatewayRunning(false));
     }, 1000);
 
     return () => window.clearInterval(timer);
@@ -270,6 +412,46 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    let disposeStatus: (() => void) | undefined;
+    let disposeFailure: (() => void) | undefined;
+
+    void listen<ServerStatus>("server-status-changed", (event) => {
+      const status = event.payload;
+      setServers((current) => {
+        const exists = current.some((server) => server.port === status.port);
+        return exists
+          ? current.map((server) =>
+              server.port === status.port ? status : server,
+            )
+          : [...current, status];
+      });
+    }).then((unlisten) => {
+      disposeStatus = unlisten;
+    });
+
+    void listen<ServerStartFailure>("server-start-failed", (event) => {
+      const failure = event.payload;
+      setPendingModelPaths((current) =>
+        current.filter((path) => path !== failure.modelPath),
+      );
+      setServers((current) =>
+        current.filter((server) => server.port !== failure.port),
+      );
+      setSelectedServerPort((current) =>
+        current === failure.port ? null : current,
+      );
+      setError(failure.error);
+    }).then((unlisten) => {
+      disposeFailure = unlisten;
+    });
+
+    return () => {
+      disposeStatus?.();
+      disposeFailure?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (activePage !== "server" || selectedServerPort === null) {
       setLogs([]);
       return;
@@ -286,14 +468,30 @@ export function App() {
   async function refreshLocalModels() {
     try {
       const discovered = (await listModels()).map(modelInfoToCatalog);
+      const persistedConfigs = await Promise.all(
+        discovered.map(async (model) => {
+          const fallback = createModelConfig(model);
+          try {
+            const settings = await loadModelSettings(model.path);
+            return [
+              model.path,
+              settings
+                ? modelConfigFromSettingsFile(settings, fallback)
+                : fallback,
+            ] as const;
+          } catch {
+            return [model.path, fallback] as const;
+          }
+        }),
+      );
 
       setLocalModels(discovered);
       setCatalogConfigs((current) => {
         const next = { ...current };
 
-        discovered.forEach((model) => {
-          if (!next[model.path]) {
-            next[model.path] = createModelConfig(model);
+        persistedConfigs.forEach(([path, config]) => {
+          if (!next[path]) {
+            next[path] = config;
           }
         });
 
@@ -306,7 +504,6 @@ export function App() {
 
         return discovered[0]?.id ?? "";
       });
-      setError(null);
     } catch (cause) {
       setError(String(cause));
     }
@@ -329,7 +526,6 @@ export function App() {
 
         return nextServers.find((server) => server.running)?.port ?? null;
       });
-      setError(null);
     } catch (cause) {
       setError(String(cause));
     }
@@ -343,6 +539,25 @@ export function App() {
     }
   }
 
+  function persistModelConfig(modelPath: string, config: ModelConfig) {
+    const previous =
+      modelSettingsSaveRef.current[modelPath] ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(() =>
+        saveModelSettings(modelPath, modelConfigToSettingsFile(config)),
+      );
+    modelSettingsSaveRef.current[modelPath] = next;
+
+    const cleanup = () => {
+      if (modelSettingsSaveRef.current[modelPath] === next) {
+        delete modelSettingsSaveRef.current[modelPath];
+      }
+    };
+    void next.then(cleanup, cleanup);
+    return next;
+  }
+
   function handleCatalogConfigChange(config: ModelConfig) {
     if (!selectedCatalogModel) {
       return;
@@ -352,6 +567,40 @@ export function App() {
       ...current,
       [selectedCatalogModel.path]: config,
     }));
+    void persistModelConfig(selectedCatalogModel.path, config).catch((cause) =>
+      setError(String(cause)),
+    );
+  }
+
+  async function handleDeleteCatalogModel(model: CatalogModel) {
+    const pendingSave = modelSettingsSaveRef.current[model.path];
+    if (pendingSave) {
+      await pendingSave.catch(() => undefined);
+    }
+
+    try {
+      const matchingServers = servers.filter(
+        (server) => server.running && server.modelPath === model.path,
+      );
+      for (const server of matchingServers) {
+        await stopServer(server.port);
+      }
+
+      await deleteModel(model.path);
+      setCatalogConfigs((current) => {
+        const next = { ...current };
+        delete next[model.path];
+        return next;
+      });
+      if (matchingServers.length > 0) {
+        await refreshServers();
+      }
+      await refreshLocalModels();
+      setError(null);
+    } catch (cause) {
+      setError(String(cause));
+      throw cause;
+    }
   }
 
   function handleServerModelConfigChange(config: ModelConfig) {
@@ -363,35 +612,23 @@ export function App() {
       ...current,
       [selectedServerModel.path]: config,
     }));
+    void persistModelConfig(selectedServerModel.path, config).catch((cause) =>
+      setError(String(cause)),
+    );
+    if (selectedServer) {
+      void updateServerInference(
+        selectedServer.port,
+        liveInferenceDefaultsFromConfig(config),
+      ).catch((cause) => setError(String(cause)));
+    }
   }
 
   async function handleLoadModel(model: CatalogModel) {
     const modelConfig =
       catalogConfigs[model.path] ?? createModelConfig(model);
-    const usedPorts = new Set(
-      servers.filter((server) => server.running).map((server) => server.port),
-    );
-    let port = serverSettings.port;
-
-    while (usedPorts.has(port) && port < 65535) {
-      port += 1;
-    }
-
-    if (usedPorts.has(port)) {
-      setError("No available worker port could be allocated.");
-      return;
-    }
-
-    const { systemPrompt: _, ...launchConfig } = modelConfig;
     const config: ServerConfig = {
       modelPath: model.path,
-      host: serverSettings.serveOnLocalNetwork ? "0.0.0.0" : "127.0.0.1",
-      port,
-      apiKey:
-        serverSettings.apiKeyEnabled && serverSettings.apiKey.trim()
-          ? serverSettings.apiKey.trim()
-          : "",
-      ...launchConfig,
+      ...modelConfig,
       chatTemplate:
         !modelConfig.chatTemplate.trim() ||
         modelConfig.chatTemplate === model.chatTemplate
@@ -399,13 +636,33 @@ export function App() {
           : modelConfig.chatTemplate,
     };
 
+    setPendingModelPaths((current) =>
+      current.includes(model.path) ? current : [...current, model.path],
+    );
+    setError(null);
+
     try {
+      await persistModelConfig(model.path, modelConfig);
       const status = await startServer(config);
+      setPendingModelPaths((current) =>
+        current.filter((path) => path !== model.path),
+      );
+      setServers((current) => {
+        const exists = current.some((server) => server.port === status.port);
+        return exists
+          ? current.map((server) =>
+              server.port === status.port ? status : server,
+            )
+          : [...current, status];
+      });
       setSelectedServerPort(status.port);
       setError(null);
-      await refreshServers();
-      await refreshLogs(status.port);
+      void refreshServers();
+      void refreshLogs(status.port);
     } catch (cause) {
+      setPendingModelPaths((current) =>
+        current.filter((path) => path !== model.path),
+      );
       setError(String(cause));
     }
   }
@@ -421,12 +678,21 @@ export function App() {
     }
   }
 
-  async function handleHuggingFaceSearch(query: string) {
+  async function handleModelSearch(
+    query: string,
+    source: ModelSearchSource = modelSearchSource,
+  ) {
     setHuggingFaceSearching(true);
 
     try {
-      const models = await searchHuggingFaceModels(query);
+      const models = await searchModels(source, query);
       setHuggingFaceModels(models);
+      if (!query.trim() && models.length > 0) {
+        void setUiPreference(
+          modelSearchCacheKey(source),
+          JSON.stringify(models),
+        );
+      }
       setError(null);
 
       const current = models.find(
@@ -443,6 +709,37 @@ export function App() {
     }
   }
 
+  async function handleModelSearchSourceChange(
+    source: ModelSearchSource,
+    query: string,
+  ) {
+    if (source === modelSearchSource) {
+      return;
+    }
+
+    setModelSearchSource(source);
+    setSelectedHuggingFaceRepoId(null);
+    setHuggingFaceRepo(null);
+    setLastDownloadedModel(null);
+    setHuggingFaceModels([]);
+
+    if (!query.trim()) {
+      try {
+        const cached = await getUiPreference(modelSearchCacheKey(source));
+        if (cached) {
+          const parsed = JSON.parse(cached) as HuggingFaceModelSummary[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setHuggingFaceModels(parsed);
+          }
+        }
+      } catch {
+        // Continue with a network refresh when there is no usable cache.
+      }
+    }
+
+    await handleModelSearch(query, source);
+  }
+
   async function handleSelectHuggingFaceModel(
     model: HuggingFaceModelSummary,
   ) {
@@ -450,7 +747,11 @@ export function App() {
     setHuggingFaceRepoLoading(true);
 
     try {
-      setHuggingFaceRepo(await huggingFaceModelFiles(model.repoId));
+      setHuggingFaceRepo(
+        model.source === "modelscope"
+          ? await modelScopeModelFiles(model.repoId)
+          : await huggingFaceModelFiles(model.repoId),
+      );
       setError(null);
     } catch (cause) {
       setHuggingFaceRepo(null);
@@ -471,7 +772,8 @@ export function App() {
       return;
     }
 
-    const downloadId = `${huggingFaceRepo.repoId}::${file.filename}`;
+    const downloadId =
+      `${huggingFaceRepo.source}::${huggingFaceRepo.repoId}::${file.filename}`;
     const startedAt = Date.now();
     const initialProgress: DownloadProgress = {
       downloadId,
@@ -506,7 +808,11 @@ export function App() {
     });
 
     try {
-      const downloaded = await downloadHuggingFaceFile(
+      const download =
+        huggingFaceRepo.source === "modelscope"
+          ? downloadModelScopeFile
+          : downloadHuggingFaceFile;
+      const downloaded = await download(
         huggingFaceRepo.repoId,
         file.filename,
         huggingFaceRepo.tags,
@@ -539,67 +845,12 @@ export function App() {
     }
   }
 
-  const statusLabel =
-    runningServers.length === 0
-      ? "Server stopped"
-      : runningServers.length === 1
-        ? `1 server running · localhost:${runningServers[0].port}`
-        : `${runningServers.length} servers running`;
   const activeDownloadCount = downloadActivities.filter(
     (activity) => activity.status === "downloading",
   ).length;
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div className="brand-block">
-          <div className="brand-mark" aria-hidden="true">
-            <Boxes size={17} strokeWidth={2} />
-          </div>
-          <div className="brand-copy">
-            <h1>TideStudio</h1>
-            <p>Local inference workspace</p>
-          </div>
-        </div>
-
-        <div className="topbar-actions">
-          <StatusBadge
-            icon={runningServers.length > 0 ? Activity : Server}
-            label={statusLabel}
-            tone={runningServers.length > 0 ? "success" : "neutral"}
-          />
-
-          <div className="topbar-downloads">
-            <IconButton
-              className="topbar-download-button"
-              icon={Download}
-              label="Downloads"
-              size={16}
-              aria-expanded={downloadsOpen}
-              onClick={() => setDownloadsOpen((current) => !current)}
-            />
-            {activeDownloadCount > 0 ? (
-              <span className="topbar-download-badge">
-                {activeDownloadCount}
-              </span>
-            ) : null}
-
-            <DownloadActivityPopover
-              open={downloadsOpen}
-              activities={downloadActivities}
-              onClose={() => setDownloadsOpen(false)}
-              onClearCompleted={() =>
-                setDownloadActivities((current) =>
-                  current.filter(
-                    (activity) => activity.status !== "completed",
-                  ),
-                )
-              }
-            />
-          </div>
-        </div>
-      </header>
-
       {error ? <div className="error-banner">{error}</div> : null}
 
       <ResizableWorkspace
@@ -614,6 +865,37 @@ export function App() {
           <NavigationPanel
             activePage={activePage}
             onPageChange={setActivePage}
+            footer={
+              <div className="topbar-downloads">
+                <button
+                  className="navigation-download-button"
+                  type="button"
+                  aria-expanded={downloadsOpen}
+                  onClick={() => setDownloadsOpen((current) => !current)}
+                >
+                  <Download size={16} strokeWidth={1.9} aria-hidden="true" />
+                  <span>Downloads</span>
+                  {activeDownloadCount > 0 ? (
+                    <span className="navigation-download-badge">
+                      {activeDownloadCount}
+                    </span>
+                  ) : null}
+                </button>
+
+                <DownloadActivityPopover
+                  open={downloadsOpen}
+                  activities={downloadActivities}
+                  onClose={() => setDownloadsOpen(false)}
+                  onClearCompleted={() =>
+                    setDownloadActivities((current) =>
+                      current.filter(
+                        (activity) => activity.status !== "completed",
+                      ),
+                    )
+                  }
+                />
+              </div>
+            }
           />
         }
         main={
@@ -627,28 +909,35 @@ export function App() {
             {activePage === "server" ? (
               <ServerDashboard
                 servers={servers}
+                pendingModelPaths={pendingModelPaths}
                 logs={logs}
                 selectedPort={selectedServerPort}
                 allModels={localModels}
                 configs={catalogConfigs}
                 serverSettings={serverSettings}
+                gatewayRunning={gatewayRunning}
                 onSelectServer={setSelectedServerPort}
                 onStop={handleStop}
                 onLoadModel={handleLoadModel}
-                onServerSettingsChange={setServerSettings}
+                onServerSettingsChange={applyGatewaySettings}
               />
             ) : activePage === "models" ? (
               <ModelLibrary
                 models={localModels}
                 selectedId={catalogSelectedId}
                 onSelect={setCatalogSelectedId}
+                onDelete={handleDeleteCatalogModel}
               />
             ) : (
               <DownloadsBrowser
                 models={huggingFaceModels}
+                source={modelSearchSource}
                 selectedRepoId={selectedHuggingFaceRepoId}
                 searching={huggingFaceSearching}
-                onSearch={(query) => void handleHuggingFaceSearch(query)}
+                onSearch={(query) => void handleModelSearch(query)}
+                onSourceChange={(source, query) =>
+                  void handleModelSearchSourceChange(source, query)
+                }
                 onSelect={(model) => void handleSelectHuggingFaceModel(model)}
               />
             )}
@@ -666,6 +955,7 @@ export function App() {
               <ModelInspector
                 selectedModel={selectedServerModel}
                 config={selectedServerModelConfig}
+                runtimeLoaded
                 onChange={handleServerModelConfigChange}
               />
             ) : activePage === "models" ? (

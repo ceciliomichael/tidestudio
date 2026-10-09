@@ -1,4 +1,5 @@
 node_modules/
 dist/
+runtime/api-gateway/
 src-tauri/target/
 .DS_Store

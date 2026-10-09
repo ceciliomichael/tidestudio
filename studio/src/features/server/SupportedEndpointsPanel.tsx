@@ -1,8 +1,8 @@
 import {
   Braces,
   ChevronDown,
+  ListChecks,
   MessagesSquare,
-  ServerCog,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -14,12 +14,11 @@ import {
   setUiPreference,
 } from "../../lib/tauri";
 
-type EndpointFamily = "openai" | "anthropic" | "native";
+type EndpointFamily = "openai" | "anthropic" | "typesafe";
 
 type Endpoint = {
   method: "GET" | "POST";
   path: string;
-  note?: string;
 };
 
 const COLLAPSED_PREFERENCE_KEY = "server.supported_endpoints.collapsed";
@@ -36,15 +35,16 @@ const FAMILY_OPTIONS: readonly SegmentedFieldOption<EndpointFamily>[] = [
     icon: MessagesSquare,
   },
   {
-    label: "llama.cpp",
-    value: "native",
-    icon: ServerCog,
+    label: "TypeSafe-compatible",
+    value: "typesafe",
+    icon: ListChecks,
   },
 ];
 
 const ENDPOINTS: Record<EndpointFamily, Endpoint[]> = {
   openai: [
     { method: "GET", path: "/v1/models" },
+    { method: "POST", path: "/v1/decisions" },
     { method: "POST", path: "/v1/responses" },
     { method: "POST", path: "/v1/chat/completions" },
     { method: "POST", path: "/v1/completions" },
@@ -52,17 +52,10 @@ const ENDPOINTS: Record<EndpointFamily, Endpoint[]> = {
   ],
   anthropic: [
     { method: "POST", path: "/v1/messages" },
+    { method: "POST", path: "/v1/messages/count_tokens" },
   ],
-  native: [
-    { method: "GET", path: "/health", note: "Public health check" },
-    { method: "POST", path: "/completion" },
-    { method: "POST", path: "/embeddings" },
-    { method: "POST", path: "/tokenize" },
-    { method: "GET", path: "/slots", note: "Enabled by default" },
-    { method: "GET", path: "/metrics", note: "Requires --metrics" },
-    { method: "GET", path: "/props", note: "Read properties" },
-    { method: "POST", path: "/props", note: "Requires --props" },
-    { method: "POST", path: "/rerank", note: "Requires reranking mode" },
+  typesafe: [
+    { method: "POST", path: "/v1/systemone" },
   ],
 };
 
@@ -115,10 +108,7 @@ export function SupportedEndpointsPanel() {
         aria-expanded={!collapsed}
         onClick={toggleCollapsed}
       >
-        <span>
-          <h3>Supported Endpoints</h3>
-          {!collapsed ? <p>Routes exposed by llama.cpp server.</p> : null}
-        </span>
+        <h3>Supported Endpoints</h3>
         <ChevronDown
           className={
             collapsed
@@ -155,9 +145,6 @@ export function SupportedEndpointsPanel() {
                   {endpoint.method}
                 </span>
                 <code>{endpoint.path}</code>
-                <span className="supported-endpoint-row__note">
-                  {endpoint.note ?? ""}
-                </span>
               </div>
             ))}
           </div>

@@ -1,5 +1,6 @@
 use super::{CapabilityHints, ModelInfo, inspect_gguf};
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
@@ -8,8 +9,23 @@ use std::{
 pub fn discover_models() -> Result<Vec<ModelInfo>, String> {
     let models_dir = resolve_models_dir()?;
     let mut models = Vec::new();
+    let mut vision_directories = HashSet::new();
 
-    scan_directory(&models_dir, &models_dir, &mut models)?;
+    scan_directory(
+        &models_dir,
+        &models_dir,
+        &mut models,
+        &mut vision_directories,
+    )?;
+
+    for model in &mut models {
+        if Path::new(&model.path)
+            .parent()
+            .is_some_and(|parent| vision_directories.contains(parent))
+        {
+            model.supports_vision = true;
+        }
+    }
     models.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
 
     Ok(models)
@@ -38,6 +54,7 @@ fn scan_directory(
     models_dir: &Path,
     directory: &Path,
     models: &mut Vec<ModelInfo>,
+    vision_directories: &mut HashSet<PathBuf>,
 ) -> Result<(), String> {
     let entries = fs::read_dir(directory)
         .map_err(|error| format!("failed to read {}: {error}", directory.display()))?;
@@ -47,7 +64,7 @@ fn scan_directory(
         let path = entry.path();
 
         if path.is_dir() {
-            scan_directory(models_dir, &path, models)?;
+            scan_directory(models_dir, &path, models, vision_directories)?;
             continue;
         }
 
@@ -60,15 +77,22 @@ fn scan_directory(
             continue;
         }
 
-        let metadata = entry
-            .metadata()
-            .map_err(|error| format!("failed to read {} metadata: {error}", path.display()))?;
-
         let filename = path
             .file_name()
             .and_then(|value| value.to_str())
             .unwrap_or("Unknown model")
             .to_string();
+
+        if filename.to_ascii_lowercase().contains("mmproj") {
+            if let Some(parent) = path.parent() {
+                vision_directories.insert(parent.to_path_buf());
+            }
+            continue;
+        }
+
+        let metadata = entry
+            .metadata()
+            .map_err(|error| format!("failed to read {} metadata: {error}", path.display()))?;
 
         let relative = path.strip_prefix(models_dir).unwrap_or(&path);
         let repo_hint = relative.to_string_lossy().replace('\\', "/");
@@ -90,13 +114,18 @@ fn scan_directory(
             .and_then(|value| value.model_name.clone())
             .unwrap_or_else(|| filename.trim_end_matches(".gguf").to_string());
 
-        let publisher = if relative.components().count() > 1 {
-            relative
-                .components()
-                .next()
-                .and_then(|component| component.as_os_str().to_str())
-                .unwrap_or("Local")
-                .to_string()
+        let components = relative
+            .components()
+            .filter_map(|component| component.as_os_str().to_str())
+            .collect::<Vec<_>>();
+        let publisher = if components
+            .first()
+            .is_some_and(|value| *value == "modelscope")
+            && components.len() > 2
+        {
+            components[1].to_string()
+        } else if components.len() > 1 {
+            components[0].to_string()
         } else {
             "Local".to_string()
         };
@@ -123,13 +152,20 @@ fn scan_directory(
             parameters: inspection
                 .as_ref()
                 .and_then(|value| value.parameter_size.clone()),
+            context_length: inspection.as_ref().and_then(|value| value.context_length),
             quantization: infer_quantization(&filename),
             chat_template: inspection
                 .as_ref()
                 .and_then(|value| value.chat_template.clone()),
+            supports_mtp: inspection
+                .as_ref()
+                .is_some_and(|value| value.capabilities.mtp.supported),
             supports_reasoning: inspection
                 .as_ref()
                 .is_some_and(|value| value.capabilities.reasoning.supported),
+            supports_vision: inspection
+                .as_ref()
+                .is_some_and(|value| value.capabilities.vision.supported),
         });
     }
 

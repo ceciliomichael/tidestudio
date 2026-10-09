@@ -1,4 +1,5 @@
 export type CapabilityConfidence = "high" | "medium" | "low";
+export type ModelSearchSource = "huggingface" | "modelscope";
 
 export type CapabilitySignal = {
   supported: boolean;
@@ -7,7 +8,7 @@ export type CapabilitySignal = {
 };
 
 export type ModelCapabilities = {
-  category: "LLM" | "Embedding" | "Drafter";
+  category: "LLM" | "Embedding" | "Drafter" | "DECISION";
   mtp: CapabilitySignal;
   reasoning: CapabilitySignal;
   vision: CapabilitySignal;
@@ -22,6 +23,7 @@ export type GgufInspection = {
 };
 
 export type HuggingFaceModelSummary = {
+  source: ModelSearchSource;
   repoId: string;
   author: string;
   downloads: number;
@@ -29,6 +31,7 @@ export type HuggingFaceModelSummary = {
   lastModified: string | null;
   pipelineTag: string | null;
   tags: string[];
+  visionCapable: boolean;
 };
 
 export type HuggingFaceFile = {
@@ -36,6 +39,7 @@ export type HuggingFaceFile = {
   sizeBytes: number | null;
   quantization: string | null;
   isMmproj: boolean;
+  downloaded: boolean;
 };
 
 export type HuggingFaceRepoDetails = HuggingFaceModelSummary & {
@@ -58,6 +62,7 @@ export type DownloadActivity = DownloadProgress & {
 };
 
 export type DownloadedModel = {
+  source: ModelSearchSource;
   repoId: string;
   filename: string;
   path: string;

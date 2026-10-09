@@ -16,6 +16,7 @@ import type {
 
 type Props = {
   config: ModelConfig;
+  runtimeLoaded?: boolean;
   onChange: (config: ModelConfig) => void;
 };
 
@@ -28,7 +29,11 @@ const SPECULATIVE_OPTIONS: {
   { label: "Draft model", value: "draft" },
 ];
 
-export function ModelLoadTab({ config, onChange }: Props) {
+export function ModelLoadTab({
+  config,
+  runtimeLoaded = false,
+  onChange,
+}: Props) {
   function update(patch: Partial<ModelConfig>) {
     onChange({
       ...config,
@@ -38,6 +43,12 @@ export function ModelLoadTab({ config, onChange }: Props) {
 
   return (
     <div className="model-inspector-tab">
+      {runtimeLoaded ? (
+        <p className="inspector-helper-copy">
+          Load settings are saved for this GGUF and apply the next time the model
+          is loaded.
+        </p>
+      ) : null}
       <CollapsibleSection title="Context and Offload" icon={Cpu}>
         <div className="inspector-control-stack">
           <InputField

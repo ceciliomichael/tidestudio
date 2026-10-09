@@ -5,12 +5,14 @@ import {
   Settings,
   SlidersHorizontal,
 } from "lucide-react";
+import type { ReactNode } from "react";
 
 export type ActivePage = "server" | "models" | "downloads";
 
 type Props = {
   activePage: ActivePage;
   onPageChange: (page: ActivePage) => void;
+  footer?: ReactNode;
 };
 
 const items = [
@@ -46,7 +48,7 @@ const items = [
   },
 ];
 
-export function NavigationPanel({ activePage, onPageChange }: Props) {
+export function NavigationPanel({ activePage, onPageChange, footer }: Props) {
   return (
     <nav className="navigation-panel" aria-label="TideStudio navigation">
       <div className="navigation-section">
@@ -80,6 +82,8 @@ export function NavigationPanel({ activePage, onPageChange }: Props) {
           })}
         </div>
       </div>
+      <div className="navigation-spacer" />
+      {footer ? <div className="navigation-footer">{footer}</div> : null}
     </nav>
   );
 }

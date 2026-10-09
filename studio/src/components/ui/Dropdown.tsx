@@ -10,6 +10,7 @@ import { Check, ChevronDown } from "lucide-react";
 export type DropdownOption<T extends string> = {
   label: string;
   value: T;
+  badge?: string;
 };
 
 type Props<T extends string> = {
@@ -178,10 +179,15 @@ export function Dropdown<T extends string>({
                 onKeyDown={(event) => handleOptionKeyDown(event, index)}
                 onFocus={() => setActiveIndex(index)}
               >
-                <span>{option.label}</span>
-                {selected ? (
-                  <Check size={13} strokeWidth={2} aria-hidden="true" />
-                ) : null}
+                <span className="ui-dropdown__option-label">{option.label}</span>
+                <span className="ui-dropdown__option-meta">
+                  {option.badge ? (
+                    <span className="ui-dropdown__badge">{option.badge}</span>
+                  ) : null}
+                  {selected ? (
+                    <Check size={13} strokeWidth={2} aria-hidden="true" />
+                  ) : null}
+                </span>
               </button>
             );
           })}

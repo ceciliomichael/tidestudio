@@ -32,6 +32,7 @@ pub struct GgufInspection {
     pub architecture: Option<String>,
     pub model_name: Option<String>,
     pub parameter_size: Option<String>,
+    pub context_length: Option<u64>,
     pub chat_template: Option<String>,
     pub capabilities: ModelCapabilities,
 }
@@ -60,12 +61,15 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         return Err(format!("unsupported GGUF version {version}"));
     }
 
-    let _tensor_count = read_u64(&mut file)?;
+    let tensor_count = read_u64(&mut file)?;
     let metadata_count = read_u64(&mut file)?;
 
     let mut architecture = None;
     let mut model_name = None;
     let mut parameter_size = None;
+    let mut parameter_count = None;
+    let mut context_length = None;
+    let mut expert_count = None;
     let mut chat_template = None;
     let mut capability_metadata = Vec::new();
 
@@ -76,6 +80,11 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         let capture_value = lower_key == "general.architecture"
             || lower_key == "general.name"
             || lower_key == "general.size_label"
+            || lower_key == "general.parameter_count"
+            || lower_key == "general.tags"
+            || lower_key.ends_with(".context_length")
+            || lower_key.ends_with(".expert_count")
+            || lower_key == "laya.max_len"
             || lower_key.contains("chat_template")
             || capability_key(&lower_key);
 
@@ -90,17 +99,60 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
             "general.architecture" => architecture = value.clone(),
             "general.name" => model_name = value.clone(),
             "general.size_label" => parameter_size = value.clone(),
+            "general.parameter_count" => {
+                parameter_count = value
+                    .as_deref()
+                    .and_then(|value| value.parse::<u128>().ok())
+            }
+            _ if lower_key.ends_with(".context_length") || lower_key == "laya.max_len" => {
+                if context_length.is_none() {
+                    context_length = value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".expert_count") => {
+                if expert_count.is_none() {
+                    expert_count = value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
             _ if lower_key.contains("chat_template") && chat_template.is_none() => {
                 chat_template = value.clone()
             }
             _ => {}
         }
 
-        if capability_key(&lower_key) {
+        if capability_key(&lower_key) || lower_key == "general.tags" {
             capability_metadata.push(match value {
                 Some(value) => format!("{key}={value}"),
                 None => key,
             });
+        }
+    }
+
+    let should_derive_moe = expert_count.is_some_and(|count| count > 1)
+        && !parameter_size
+            .as_deref()
+            .is_some_and(|label| label.to_ascii_lowercase().contains('x'));
+    let needs_tensor_counts = parameter_size.is_none() || should_derive_moe;
+    let tensor_counts = needs_tensor_counts
+        .then(|| read_tensor_parameter_count(&mut file, tensor_count))
+        .transpose()?;
+
+    if should_derive_moe
+        && let (Some(experts), Some(counts)) = (expert_count, tensor_counts.as_ref())
+        && counts.expert > 0
+    {
+        let per_expert = counts.expert / u128::from(experts);
+        if per_expert > 0 {
+            parameter_size = Some(format!("{experts}x{}", format_parameter_count(per_expert)));
+        }
+    }
+
+    if parameter_size.is_none() {
+        let count = parameter_count
+            .or_else(|| tensor_counts.as_ref().map(|counts| counts.total))
+            .unwrap_or(0);
+        if count > 0 {
+            parameter_size = Some(format_parameter_count(count));
         }
     }
 
@@ -116,9 +168,88 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         architecture,
         model_name,
         parameter_size,
+        context_length,
         chat_template,
         capabilities,
     })
+}
+
+struct TensorParameterCounts {
+    total: u128,
+    expert: u128,
+}
+
+fn read_tensor_parameter_count(
+    file: &mut File,
+    tensor_count: u64,
+) -> Result<TensorParameterCounts, String> {
+    let mut total = 0_u128;
+    let mut expert = 0_u128;
+
+    for _ in 0..tensor_count {
+        let name = read_string(file)?;
+        let dimensions = read_u32(file)?;
+        let mut elements = 1_u128;
+
+        for _ in 0..dimensions {
+            elements = elements
+                .checked_mul(u128::from(read_u64(file)?))
+                .ok_or_else(|| "GGUF tensor parameter count overflow".to_string())?;
+        }
+
+        let _tensor_type = read_u32(file)?;
+        let _offset = read_u64(file)?;
+        total = total
+            .checked_add(elements)
+            .ok_or_else(|| "GGUF parameter count overflow".to_string())?;
+
+        let lower_name = name.to_ascii_lowercase();
+        if lower_name.contains("exps")
+            || lower_name.contains(".experts.")
+            || lower_name.contains("expert")
+        {
+            expert = expert
+                .checked_add(elements)
+                .ok_or_else(|| "GGUF expert parameter count overflow".to_string())?;
+        }
+    }
+
+    Ok(TensorParameterCounts { total, expert })
+}
+
+fn format_parameter_count(count: u128) -> String {
+    const BILLION: f64 = 1_000_000_000.0;
+    const MILLION: f64 = 1_000_000.0;
+    const THOUSAND: f64 = 1_000.0;
+
+    let count = count as f64;
+    if count >= BILLION {
+        trim_parameter_number(count / BILLION) + "B"
+    } else if count >= MILLION {
+        trim_parameter_number(count / MILLION) + "M"
+    } else if count >= THOUSAND {
+        trim_parameter_number(count / THOUSAND) + "K"
+    } else {
+        format!("{count:.0}")
+    }
+}
+
+fn trim_parameter_number(value: f64) -> String {
+    let precision = if value >= 100.0 {
+        0
+    } else if value >= 10.0 {
+        1
+    } else {
+        2
+    };
+    let formatted = format!("{value:.precision$}");
+    if precision == 0 {
+        return formatted;
+    }
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
 }
 
 fn infer_capabilities(
@@ -146,6 +277,30 @@ fn infer_capabilities(
     let metadata_haystack = capability_metadata.join(" ").to_lowercase();
     let template = chat_template.unwrap_or_default().to_lowercase();
 
+    let decision_metadata =
+        metadata_haystack.contains("decision") || metadata_haystack.contains("laya.");
+    let decision_tags =
+        tag_haystack.contains("decision-model") || tag_haystack.contains("decision_model");
+    let decision_name = name_haystack.contains("openjev")
+        || name_haystack.contains("julia-1")
+        || name_haystack.contains("laya")
+        || name_haystack.contains("decision-model")
+        || name_haystack.contains("decision_model");
+    let decision_evidence = evidence([
+        (
+            decision_metadata,
+            "GGUF metadata contains decision-model markers".to_string(),
+        ),
+        (
+            decision_tags,
+            "repository metadata identifies a decision model".to_string(),
+        ),
+        (
+            decision_name,
+            "model/repository name indicates a decision model".to_string(),
+        ),
+    ]);
+
     let embedding_evidence = evidence([
         (
             architecture_lower.contains("bert") || architecture_lower.contains("embed"),
@@ -172,7 +327,9 @@ fn infer_capabilities(
         ),
     ]);
 
-    let category = if !drafter_evidence.is_empty() {
+    let category = if !decision_evidence.is_empty() {
+        "DECISION"
+    } else if !drafter_evidence.is_empty() {
         "Drafter"
     } else if !embedding_evidence.is_empty() {
         "Embedding"
@@ -332,6 +489,8 @@ fn capability_key(key: &str) -> bool {
         "function",
         "pooling",
         "embedding",
+        "decision",
+        "laya",
     ]
     .iter()
     .any(|needle| key.contains(needle))
@@ -574,6 +733,163 @@ mod tests {
         fs::remove_file(path).expect("remove test gguf");
     }
 
+    #[test]
+    fn detects_decision_model_before_bert_embedding_heuristic() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tidestudio-decision-{unique}.gguf"));
+        let mut file = File::create(&path).expect("create test gguf");
+
+        file.write_all(b"GGUF").expect("magic");
+        file.write_all(&3_u32.to_le_bytes()).expect("version");
+        file.write_all(&0_u64.to_le_bytes()).expect("tensor count");
+        file.write_all(&3_u64.to_le_bytes())
+            .expect("metadata count");
+
+        write_string_metadata(&mut file, "general.architecture", "modern-bert");
+        write_string_metadata(&mut file, "general.name", "Julia-1");
+        write_string_metadata(&mut file, "modern-bert.decision.type", "noul");
+        drop(file);
+
+        let tags = vec!["decision-model".to_string()];
+        let inspection = inspect_gguf(
+            &path,
+            CapabilityHints {
+                repo_id: "ggml-org/Julia-1-GGUF",
+                filename: "Julia-1-Q8_0.gguf",
+                tags: &tags,
+                pipeline_tag: None,
+            },
+        )
+        .expect("inspect decision gguf");
+
+        assert_eq!(inspection.capabilities.category, "DECISION");
+
+        fs::remove_file(path).expect("remove test gguf");
+    }
+
+    #[test]
+    fn detects_laya_decision_model_metadata() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tidestudio-laya-{unique}.gguf"));
+        let mut file = File::create(&path).expect("create test gguf");
+
+        file.write_all(b"GGUF").expect("magic");
+        file.write_all(&3_u32.to_le_bytes()).expect("version");
+        file.write_all(&0_u64.to_le_bytes()).expect("tensor count");
+        file.write_all(&3_u64.to_le_bytes())
+            .expect("metadata count");
+
+        write_string_metadata(&mut file, "general.architecture", "ggmlc");
+        write_string_metadata(&mut file, "general.name", "laya_english_f16");
+        write_string_metadata(&mut file, "laya.model_name", "laya");
+        drop(file);
+
+        let inspection = inspect_gguf(
+            &path,
+            CapabilityHints {
+                repo_id: "mys/laya-GGUF",
+                filename: "laya_english_f16.gguf",
+                tags: &[],
+                pipeline_tag: None,
+            },
+        )
+        .expect("inspect laya gguf");
+
+        assert_eq!(inspection.capabilities.category, "DECISION");
+
+        fs::remove_file(path).expect("remove test gguf");
+    }
+
+    #[test]
+    fn derives_parameter_size_from_tensor_shapes() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tidestudio-params-{unique}.gguf"));
+        let mut file = File::create(&path).expect("create test gguf");
+
+        file.write_all(b"GGUF").expect("magic");
+        file.write_all(&3_u32.to_le_bytes()).expect("version");
+        file.write_all(&2_u64.to_le_bytes()).expect("tensor count");
+        file.write_all(&2_u64.to_le_bytes())
+            .expect("metadata count");
+
+        write_string_metadata(&mut file, "general.architecture", "example");
+        write_string_metadata(&mut file, "general.name", "No Size Label");
+
+        write_tensor_info(&mut file, "token_embd.weight", &[1_000, 2_000], 0);
+        write_tensor_info(&mut file, "output.weight", &[500, 2_000], 8_000_000);
+        drop(file);
+
+        let inspection = inspect_gguf(
+            &path,
+            CapabilityHints {
+                repo_id: "example/no-size-label",
+                filename: "model.gguf",
+                tags: &[],
+                pipeline_tag: None,
+            },
+        )
+        .expect("inspect gguf");
+
+        assert_eq!(inspection.parameter_size.as_deref(), Some("3M"));
+
+        fs::remove_file(path).expect("remove test gguf");
+    }
+
+    #[test]
+    fn derives_moe_parameter_layout_and_context_length() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tidestudio-moe-{unique}.gguf"));
+        let mut file = File::create(&path).expect("create test gguf");
+
+        file.write_all(b"GGUF").expect("magic");
+        file.write_all(&3_u32.to_le_bytes()).expect("version");
+        file.write_all(&2_u64.to_le_bytes()).expect("tensor count");
+        file.write_all(&4_u64.to_le_bytes())
+            .expect("metadata count");
+
+        write_string_metadata(&mut file, "general.architecture", "example-moe");
+        write_string_metadata(&mut file, "general.name", "Example MoE");
+        write_u32_metadata(&mut file, "example-moe.expert_count", 64);
+        write_u32_metadata(&mut file, "example-moe.context_length", 32_768);
+
+        write_tensor_info(
+            &mut file,
+            "blk.0.ffn_up_exps.weight",
+            &[64, 1_200_000_000],
+            0,
+        );
+        write_tensor_info(&mut file, "token_embd.weight", &[1_000, 2_000], 8_000_000);
+        drop(file);
+
+        let inspection = inspect_gguf(
+            &path,
+            CapabilityHints {
+                repo_id: "example/moe",
+                filename: "model.gguf",
+                tags: &[],
+                pipeline_tag: None,
+            },
+        )
+        .expect("inspect moe gguf");
+
+        assert_eq!(inspection.parameter_size.as_deref(), Some("64x1.2B"));
+        assert_eq!(inspection.context_length, Some(32_768));
+
+        fs::remove_file(path).expect("remove test gguf");
+    }
+
     fn write_string_metadata(file: &mut File, key: &str, value: &str) {
         write_gguf_string(file, key);
         file.write_all(&8_u32.to_le_bytes()).expect("string type");
@@ -584,6 +900,25 @@ mod tests {
         write_gguf_string(file, key);
         file.write_all(&7_u32.to_le_bytes()).expect("bool type");
         file.write_all(&[u8::from(value)]).expect("bool value");
+    }
+
+    fn write_u32_metadata(file: &mut File, key: &str, value: u32) {
+        write_gguf_string(file, key);
+        file.write_all(&4_u32.to_le_bytes()).expect("u32 type");
+        file.write_all(&value.to_le_bytes()).expect("u32 value");
+    }
+
+    fn write_tensor_info(file: &mut File, name: &str, dimensions: &[u64], offset: u64) {
+        write_gguf_string(file, name);
+        file.write_all(&(dimensions.len() as u32).to_le_bytes())
+            .expect("tensor dimension count");
+        for dimension in dimensions {
+            file.write_all(&dimension.to_le_bytes())
+                .expect("tensor dimension");
+        }
+        file.write_all(&0_u32.to_le_bytes()).expect("tensor type");
+        file.write_all(&offset.to_le_bytes())
+            .expect("tensor offset");
     }
 
     fn write_gguf_string(file: &mut File, value: &str) {

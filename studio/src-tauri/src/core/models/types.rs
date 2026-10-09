@@ -11,7 +11,10 @@ pub struct ModelInfo {
     pub category: String,
     pub architecture: Option<String>,
     pub parameters: Option<String>,
+    pub context_length: Option<u64>,
     pub quantization: Option<String>,
     pub chat_template: Option<String>,
+    pub supports_mtp: bool,
     pub supports_reasoning: bool,
+    pub supports_vision: bool,
 }

@@ -12,6 +12,7 @@ const USER_AGENT: &str = "TideStudio/0.1";
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HuggingFaceModelSummary {
+    pub source: String,
     pub repo_id: String,
     pub author: String,
     pub downloads: u64,
@@ -19,6 +20,7 @@ pub struct HuggingFaceModelSummary {
     pub last_modified: Option<String>,
     pub pipeline_tag: Option<String>,
     pub tags: Vec<String>,
+    pub vision_capable: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -28,11 +30,13 @@ pub struct HuggingFaceFile {
     pub size_bytes: Option<u64>,
     pub quantization: Option<String>,
     pub is_mmproj: bool,
+    pub downloaded: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HuggingFaceRepoDetails {
+    pub source: String,
     pub repo_id: String,
     pub author: String,
     pub downloads: u64,
@@ -40,6 +44,7 @@ pub struct HuggingFaceRepoDetails {
     pub last_modified: Option<String>,
     pub pipeline_tag: Option<String>,
     pub tags: Vec<String>,
+    pub vision_capable: bool,
     pub files: Vec<HuggingFaceFile>,
     pub readme: Option<String>,
 }
@@ -58,6 +63,7 @@ pub struct DownloadProgress {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadedModel {
+    pub source: String,
     pub repo_id: String,
     pub filename: String,
     pub path: String,
@@ -123,6 +129,8 @@ pub async fn search_models(query: &str) -> Result<Vec<HuggingFaceModelSummary>, 
 
 pub async fn model_files(repo_id: &str) -> Result<HuggingFaceRepoDetails, String> {
     validate_repo_id(repo_id)?;
+    let models_dir = resolve_models_dir()?;
+    let destination_dir = destination_repo_dir(&models_dir, repo_id)?;
 
     let client = client()?;
     let response = client
@@ -146,11 +154,21 @@ pub async fn model_files(repo_id: &str) -> Result<HuggingFaceRepoDetails, String
         .unwrap_or_default()
         .into_iter()
         .filter(|file| file.rfilename.to_lowercase().ends_with(".gguf"))
-        .map(|file| HuggingFaceFile {
-            quantization: infer_quantization(&file.rfilename),
-            is_mmproj: file.rfilename.to_lowercase().contains("mmproj"),
-            size_bytes: file.size.or_else(|| file.lfs.and_then(|lfs| lfs.size)),
-            filename: file.rfilename,
+        .map(|file| {
+            let filename = file.rfilename;
+            let leaf_name = Path::new(&filename)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or(&filename);
+            let destination = destination_dir.join(sanitize_component(leaf_name));
+
+            HuggingFaceFile {
+                quantization: infer_quantization(&filename),
+                is_mmproj: filename.to_lowercase().contains("mmproj"),
+                size_bytes: file.size.or_else(|| file.lfs.and_then(|lfs| lfs.size)),
+                downloaded: destination.is_file(),
+                filename,
+            }
         })
         .collect::<Vec<_>>();
 
@@ -162,7 +180,10 @@ pub async fn model_files(repo_id: &str) -> Result<HuggingFaceRepoDetails, String
         })
     });
 
+    let vision_capable = summary.vision_capable || files.iter().any(|file| file.is_mmproj);
+
     Ok(HuggingFaceRepoDetails {
+        source: "huggingface".to_string(),
         repo_id: summary.repo_id,
         author: summary.author,
         downloads: summary.downloads,
@@ -170,6 +191,7 @@ pub async fn model_files(repo_id: &str) -> Result<HuggingFaceRepoDetails, String
         last_modified: summary.last_modified,
         pipeline_tag: summary.pipeline_tag,
         tags: summary.tags,
+        vision_capable,
         files,
         readme,
     })
@@ -225,7 +247,7 @@ pub async fn download_file(
             .unwrap_or("gguf")
     ));
 
-    let download_id = format!("{}::{}", repo_id, filename);
+    let download_id = format!("huggingface::{repo_id}::{filename}");
     let url = resolve_url(repo_id, filename)?;
     let client = client()?;
     let response = client
@@ -325,6 +347,7 @@ pub async fn download_file(
     );
 
     Ok(DownloadedModel {
+        source: "huggingface".to_string(),
         repo_id: repo_id.to_string(),
         filename: filename.to_string(),
         path: destination.to_string_lossy().into_owned(),
@@ -347,6 +370,7 @@ fn summary_from_raw(model: RawModel) -> HuggingFaceModelSummary {
 
 fn summary_from_raw_ref(model: &RawModel) -> HuggingFaceModelSummary {
     HuggingFaceModelSummary {
+        source: "huggingface".to_string(),
         repo_id: model.id.clone(),
         author: model
             .author
@@ -357,7 +381,36 @@ fn summary_from_raw_ref(model: &RawModel) -> HuggingFaceModelSummary {
         last_modified: model.last_modified.clone(),
         pipeline_tag: model.pipeline_tag.clone(),
         tags: model.tags.clone().unwrap_or_default(),
+        vision_capable: is_vision_capable(model),
     }
+}
+
+fn is_vision_capable(model: &RawModel) -> bool {
+    let haystack = format!(
+        "{} {} {}",
+        model.id,
+        model.pipeline_tag.as_deref().unwrap_or_default(),
+        model.tags.as_deref().unwrap_or_default().join(" ")
+    )
+    .to_ascii_lowercase();
+
+    if haystack.contains("vision")
+        || haystack.contains("multimodal")
+        || haystack.contains("image-text-to-text")
+        || haystack.contains("image_text_to_text")
+        || haystack.contains("visual-language")
+        || haystack.contains("visual_language")
+        || haystack.contains("vlm")
+    {
+        return true;
+    }
+
+    model
+        .siblings
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .any(|file| file.rfilename.to_ascii_lowercase().contains("mmproj"))
 }
 
 fn is_likely_llama_cpp_model(model: &RawModel) -> bool {

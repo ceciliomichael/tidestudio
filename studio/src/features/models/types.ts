@@ -1,4 +1,4 @@
-export type ModelCategory = "LLM" | "Embedding" | "Drafter";
+export type ModelCategory = "LLM" | "Embedding" | "Drafter" | "DECISION";
 
 export type CatalogModel = {
   id: string;
@@ -8,9 +8,12 @@ export type CatalogModel = {
   category: ModelCategory;
   architecture: string;
   parameters: string;
+  contextLength: string;
   quantization: string;
   size: string;
   modified: string;
   chatTemplate: string | null;
+  supportsMtp: boolean;
   supportsReasoning: boolean;
+  supportsVision: boolean;
 };

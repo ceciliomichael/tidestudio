@@ -69,16 +69,14 @@ pub fn spawn_llama_server(
         .arg("--model")
         .arg(&config.model_path)
         .arg("--host")
-        .arg(&config.host)
+        .arg("127.0.0.1")
         .arg("--port")
         .arg(config.port.to_string())
+        .arg("--alias")
+        .arg(&config.model_id)
+        .arg("--no-webui")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-
-    let api_key = config.api_key.trim();
-    if !api_key.is_empty() {
-        command.arg("--api-key").arg(api_key);
-    }
 
     if let Some(context_size) = config.context_size {
         command.arg("--ctx-size").arg(context_size.to_string());

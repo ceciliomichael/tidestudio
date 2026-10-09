@@ -20,6 +20,7 @@ type InspectorTab = "info" | "load" | "inference";
 type Props = {
   selectedModel: CatalogModel | null;
   config: ModelConfig | null;
+  runtimeLoaded?: boolean;
   onChange: (config: ModelConfig) => void;
 };
 
@@ -44,6 +45,7 @@ const TABS: readonly SegmentedFieldOption<InspectorTab>[] = [
 export function ModelInspector({
   selectedModel,
   config,
+  runtimeLoaded = false,
   onChange,
 }: Props) {
   const [tab, setTab] = useState<InspectorTab>("info");
@@ -81,12 +83,17 @@ export function ModelInspector({
       <div className="model-inspector__content">
         {tab === "info" ? <ModelInfoTab model={selectedModel} /> : null}
         {tab === "load" ? (
-          <ModelLoadTab config={config} onChange={onChange} />
+          <ModelLoadTab
+            config={config}
+            runtimeLoaded={runtimeLoaded}
+            onChange={onChange}
+          />
         ) : null}
         {tab === "inference" ? (
           <ModelInferenceTab
             model={selectedModel}
             config={config}
+            runtimeLoaded={runtimeLoaded}
             onChange={onChange}
           />
         ) : null}

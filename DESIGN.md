@@ -10,7 +10,7 @@ Create interfaces that feel calm, precise, and quietly polished. Favor clarity o
 - The current visual tokens and spacing are intentionally aligned with the local TideCode light design system.
 - Use Google Sans Flex for interface typography.
 - Use a warm near-white shell, soft gray sidebar/inspector surfaces, white primary surfaces, and the TideCode green accent family.
-- Prefer 12px rounded controls, fine neutral borders, and restrained low-opacity shadows.
+- Prefer compact 6-10px control radii, fine neutral borders, and restrained low-opacity shadows. Reserve larger radii for genuinely elevated surfaces such as dialogs and popovers.
 
 ### Overall feel
 
@@ -39,7 +39,7 @@ Create interfaces that feel calm, precise, and quietly polished. Favor clarity o
 - Add color when it communicates state or meaning.
 - Keep secondary text quieter but still readable.
 - Use a restrained typographic hierarchy.
-- Use a comfortable desktop scale. Most readable UI text should sit around 12-14px, primary headings around 16-18px, standard controls around 40-42px tall, compact controls around 34-36px, navigation rows around 48px, and primary model/server rows around 70-82px.
+- Use a comfortable desktop scale. Most readable UI text should sit around 12-14px, primary headings around 16-18px, standard controls around 38-40px tall, compact controls around 34px, navigation rows around 38-40px, and primary model/server rows around 70-88px.
 - Use monospace selectively for technical values, ports, paths, logs, or metadata.
 - Use `lucide-react` for interface icons. Do not use emoji as icons.
 - Pair icons with text when meaning is not obvious.
@@ -54,7 +54,7 @@ Create interfaces that feel calm, precise, and quietly polished. Favor clarity o
 
 ## Desktop workspace
 
-TideStudio uses a persistent three-panel desktop structure with an initial approximate 20/60/20 balance.
+TideStudio uses a persistent desktop structure with a compact navigation rail, one continuous working surface, and a contextual right inspector when appropriate. The navigation defaults to roughly 220px and remains resizable.
 
 ### Left panel
 
@@ -62,13 +62,13 @@ The left panel is product navigation, not the model list itself. It provides sta
 
 - Server
 - Models
-- Downloads
+- Model Search
 - Presets
 - Settings
 
-Server, Models, and Downloads are implemented destinations. Future destinations may appear quietly as unavailable items without pretending the page exists.
+Server, Models, and Model Search are implemented destinations. Future destinations may appear quietly as unavailable items without pretending the page exists.
 
-The sidebar follows TideCode-like spacing: compact top spacing, approximately 16-20px horizontal breathing room, and compact rounded navigation rows. Do not show backend/runtime metadata in the sidebar footer.
+The sidebar follows compact TideCode-like spacing with restrained rounded navigation rows. The Downloads activity control belongs in the sidebar footer; do not show backend/runtime metadata there.
 
 The active navigation item keeps the same selected color on hover. Hover feedback is only for inactive interactive items.
 
@@ -80,9 +80,9 @@ The center workspace is a full-height square-edged surface, not an inset rounded
 
 The center host itself has no global content padding. Each page owns its spacing. Models uses a full-bleed catalog layout so the toolbar and table can span the complete center width, while Server applies its own readable content inset.
 
-Model Search uses a searchable Hugging Face repository list in the center workspace and a repository/file inspector on the right. Keep search results dense and list-oriented rather than turning every model into a large marketplace card. Search is debounced as the user types; do not show a separate Search button. The right inspector shows repository metadata, GGUF files/quantizations, per-file download actions, and detected capabilities after completion.
+Model Search uses a searchable repository list in the center workspace and a repository/file inspector on the right. A compact source dropdown sits beside the search field, with Hugging Face selected by default and ModelScope available as the second source. Keep search results dense and list-oriented rather than turning every model into a large marketplace card. Search is debounced as the user types; do not show a separate Search button. The right inspector shows repository metadata, GGUF files/quantizations, per-file download actions, detected capabilities after completion, and the repository README/model card rendered as Markdown with normal headings, lists, code, tables, emphasis, and links.
 
-For Model Search specifically, follow the LM Studio reference hierarchy while keeping TideStudio's own visual system. The center panel uses a prominent fixed search field and larger rounded repository rows with publisher identity, compact tags, downloads/likes, and a clear selected state. The right panel remains a separate inspector and uses a repository title/stats header, summary/capability card, Download Options, and README sections.
+For Model Search specifically, follow the LM Studio information hierarchy while keeping TideStudio's own visual system. The center panel uses a fixed page/search toolbar and flat repository rows separated by fine dividers, with publisher identity, compact tags, downloads/likes, and a restrained selected state. The right panel remains a separate inspector and uses a repository title/stats header, open summary sections, Download Options, and README content.
 
 Model Search uses two workspace modes. With no repository selected, the right detail pane is collapsed so the model list owns the available center workspace. Selecting a repository expands the right detail pane to roughly 58% of the post-navigation workspace, leaving the model list as the narrower left side. The expanded divider remains draggable. Closing the model detail returns to browse mode.
 
@@ -90,9 +90,9 @@ Download Options must keep model GGUF files and vision projector mmproj files vi
 
 Within each Download Options group, use one dropdown to select a GGUF variant and one Download action rather than rendering every quantization as a separate row. Show the selected file's size and quantization; keep projectors in a separate selector.
 
-The Model Search center page fills the complete center panel. Its page header, search controls, and results heading remain fixed in place; only the repository results list scrolls vertically. Download progress does not belong in Model Search.
+The Model Search center page fills the complete center panel. Its search field and provider selector remain fixed in place; only the repository results list scrolls vertically. Do not add a separate provider/results heading below the search controls. Download progress does not belong in Model Search.
 
-Global download activity lives in a header popover opened from the download icon beside server status. Active entries show downloaded size, total size, percentage, live transfer speed, and a progress bar. Completed downloads remain in the popover until cleared.
+Global download activity lives in a popover opened from the Downloads utility at the bottom of the sidebar. Active entries show downloaded size, total size, percentage, live transfer speed, and a progress bar. Completed downloads remain in the popover until cleared.
 
 Download progress UI should update at a readable cadence rather than repainting for every network chunk. Active rows use stable metric regions and tabular numbers so transfer speed and byte counts do not visually jump around. In Model Search, an active file's Download button shows its percentage instead of a generic Downloading label.
 
@@ -125,7 +125,7 @@ The Server center workspace uses a vertical split similar to LM Studio: an inset
 
 At the top of the Server center workspace, show a compact control strip with runtime status, Server Settings, the future `mcp.json` entry, the current reachable endpoint with copy action, and Load Model. Follow it with a simple `Loaded Models` heading before the runtime cards.
 
-`Load Model` opens a centered model-manager dialog rather than navigating away. The dialog contains a filter field, Currently Loaded models with Eject actions, the local model catalog with Load actions, and the manual-load-parameters toggle.
+`Load Model` opens a compact desktop-picker dialog rather than navigating away. Position it in the upper portion of the window instead of vertically centering it. Use a search-first top bar, a small sort segmented control, and one dense model list with inline quantization/MTP/publisher metadata. Unloaded rows themselves are the Load action and show only a chevron affordance; loaded models stay in the same list and expose compact Loading/Stop state matching the loaded-model cards. Clicking an unloaded row closes the dialog immediately and inserts an optimistic Loading card.
 
 `Server Settings` opens a dedicated settings dialog. Server-wide settings such as public port, authentication, LAN binding, CORS, MCP policy, and JIT loading do not belong in the right inspector.
 
@@ -133,13 +133,19 @@ On the Server page, the right inspector is model-focused and reuses the same Inf
 
 API Logs is a bottom dock rather than a floating card. Its header remains visible when collapsed, and the horizontal divider above it resizes the expanded panel. Selecting a running-model card controls which server output appears there. Avoid duplicating logs or stop actions in the right inspector.
 
-Place a collapsible Supported Endpoints panel at the bottom of the upper Server region, above the logs dock. Its header toggles the panel open/closed. Default it to collapsed, and persist its collapsed/open state across app restarts in SQLite. Use the shared `SegmentedField` to switch between OpenAI-compatible, Anthropic-compatible, and llama.cpp endpoint families.
+Place a floating, rounded, collapsible Supported Endpoints panel at the bottom of the upper Server region, above the logs dock. Its header toggles the panel open/closed. Default it to collapsed, and persist its collapsed/open state across app restarts in SQLite. Keep the panel wide across the Server workspace while the segmented control stays compact. Use the shared `SegmentedField` to switch between OpenAI-compatible, Anthropic-compatible, and TypeSafe-compatible endpoint families.
 
-Server-wide startup/restart settings such as port, local-network binding, API-key authentication, CORS, MCP policy, and JIT policy live in the dedicated Server Settings dialog, not the right inspector.
+Server-wide startup/restart settings such as public gateway port, local-network binding, API-key authentication, CORS, MCP policy, and JIT policy live in the dedicated Server Settings dialog, not the right inspector. Public gateway settings take effect together through Apply, persist across app launches, and private llama.cpp worker ports are not user-configurable.
 
 Keep configuration vertically scannable and compact. Avoid turning each option into a separate card.
 
 The Models inspector follows the compact hierarchy of LM Studio's right-side model panel: model name at the top, a full-width segmented tab field, then thinly separated disclosure sections. Reuse TideStudio's own colors and typography rather than cloning LM Studio's branding.
+
+Model Load and Inference configuration is per GGUF and persists beside that file in a TideStudio JSON sidecar. In a loaded model's Server inspector, Inference changes affect subsequent API requests immediately without restarting the worker; Load-tab changes are saved but apply on the next load. Explicit request parameters override TideStudio's saved defaults. Loaded-model cards include the detected quantization when known.
+
+The Models library classifies native decision GGUFs as `DECISION` using decision metadata such as `modern-bert.decision.*` and `decision-model` tags. New MTP-capable models default to MTP speculative mode. Embedding models default to llama.cpp embeddings mode.
+
+The Models table uses the desktop-library columns `Model | Publisher | Type | Params | Quant | Context Length | Size | Actions`. Keep rows compact, keep the Model column narrow with ellipsis truncation, and align Actions to the far-right edge with flexible space before it. GGUF itself is implicit because TideStudio only manages GGUF model files. Parameter labels preserve GGUF MoE labels and, when necessary, derive expert layouts such as `64x1.2B` from `*.expert_count` plus expert tensor shapes. Context Length comes from GGUF context metadata. The Actions menu owns reveal-in-folder, identifier/path copy, provider link, and safe deletion.
 
 The Inference tab is organized into Prompt, Reasoning, and Sampling sections for LLMs. Prompt contains the system prompt default. Reasoning controls are shown only for models marked as reasoning-capable and include thinking enablement, effort, budget, and reasoning preservation. Sampling contains the common llama.cpp generation defaults such as temperature, top-k, top-p, min-p, typical-p, seed, and repetition/presence/frequency penalties.
 

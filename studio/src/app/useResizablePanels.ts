@@ -6,8 +6,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-const MIN_LEFT_WIDTH = 180;
-const MAX_LEFT_WIDTH = 380;
+const MIN_LEFT_WIDTH = 196;
+const MAX_LEFT_WIDTH = 280;
 const STANDARD_MIN_RIGHT_WIDTH = 260;
 const STANDARD_MAX_RIGHT_WIDTH = 440;
 const DETAIL_MIN_RIGHT_WIDTH = 480;
@@ -66,11 +66,7 @@ function initialWidths(
   containerWidth: number,
   mode: WorkspaceLayoutMode,
 ): PanelWidths {
-  const left = clamp(
-    containerWidth * 0.2,
-    MIN_LEFT_WIDTH,
-    MAX_LEFT_WIDTH,
-  );
+  const left = clamp(220, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
   const limits = limitsFor(mode);
 
   if (mode === "modelSearchBrowse") {

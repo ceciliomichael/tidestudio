@@ -1,9 +1,5 @@
 use serde::Deserialize;
 
-fn default_host() -> String {
-    "127.0.0.1".to_string()
-}
-
 fn default_reasoning_effort() -> String {
     "default".to_string()
 }
@@ -21,13 +17,14 @@ pub enum SpeculativeMode {
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub model_path: String,
-    #[serde(default = "default_host")]
-    pub host: String,
-    pub port: u16,
     #[serde(default)]
-    pub api_key: String,
+    pub model_id: String,
+    #[serde(default)]
+    pub port: u16,
     pub context_size: Option<u32>,
     pub gpu_layers: Option<i32>,
+    #[serde(default)]
+    pub system_prompt: String,
     #[serde(default)]
     pub chat_template: String,
     #[serde(default)]
