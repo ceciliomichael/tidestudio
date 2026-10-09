@@ -74,6 +74,7 @@ export function ModelInspector({
 
         <SegmentedField
           ariaLabel="Model inspector"
+          className="model-inspector__tabs"
           options={TABS}
           value={tab}
           onChange={setTab}

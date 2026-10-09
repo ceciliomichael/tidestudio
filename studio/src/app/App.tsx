@@ -27,6 +27,7 @@ import {
 } from "../lib/config";
 import {
   configureGateway,
+  configureGatewayBackground,
   deleteModel,
   downloadHuggingFaceFile,
   downloadModelScopeFile,
@@ -193,6 +194,7 @@ export function App() {
     >
   >({});
   const modelSettingsSaveRef = useRef<Record<string, Promise<void>>>({});
+  const modelSearchPrimedRef = useRef(false);
   const [lastDownloadedModel, setLastDownloadedModel] =
     useState<DownloadedModel | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -240,8 +242,16 @@ export function App() {
     void refreshLocalModels();
     void refreshServers();
     void restoreServerSettings();
-    void primeModelSearch();
   }, []);
+
+  useEffect(() => {
+    if (activePage !== "downloads" || modelSearchPrimedRef.current) {
+      return;
+    }
+
+    modelSearchPrimedRef.current = true;
+    void primeModelSearch();
+  }, [activePage]);
 
   async function searchModels(
     source: ModelSearchSource,
@@ -303,7 +313,10 @@ export function App() {
     } catch {
       // Keep defaults when persisted server settings are unavailable.
     }
-    await applyGatewaySettings(settings, false);
+    setServerSettings(settings);
+    void configureGatewayBackground(settings).catch((cause) =>
+      setError(String(cause)),
+    );
   }
 
   async function applyGatewaySettings(
@@ -414,6 +427,8 @@ export function App() {
   useEffect(() => {
     let disposeStatus: (() => void) | undefined;
     let disposeFailure: (() => void) | undefined;
+    let disposeGatewayStatus: (() => void) | undefined;
+    let disposeGatewayFailure: (() => void) | undefined;
 
     void listen<ServerStatus>("server-status-changed", (event) => {
       const status = event.payload;
@@ -445,9 +460,24 @@ export function App() {
       disposeFailure = unlisten;
     });
 
+    void listen<boolean>("gateway-status-changed", (event) => {
+      setGatewayRunning(event.payload);
+    }).then((unlisten) => {
+      disposeGatewayStatus = unlisten;
+    });
+
+    void listen<string>("gateway-start-failed", (event) => {
+      setGatewayRunning(false);
+      setError(event.payload);
+    }).then((unlisten) => {
+      disposeGatewayFailure = unlisten;
+    });
+
     return () => {
       disposeStatus?.();
       disposeFailure?.();
+      disposeGatewayStatus?.();
+      disposeGatewayFailure?.();
     };
   }, []);
 
@@ -570,6 +600,15 @@ export function App() {
     void persistModelConfig(selectedCatalogModel.path, config).catch((cause) =>
       setError(String(cause)),
     );
+    const defaults = liveInferenceDefaultsFromConfig(config);
+    for (const server of runningServers) {
+      if (server.modelPath !== selectedCatalogModel.path) {
+        continue;
+      }
+      void updateServerInference(server.port, defaults).catch((cause) =>
+        setError(String(cause)),
+      );
+    }
   }
 
   async function handleDeleteCatalogModel(model: CatalogModel) {
@@ -962,6 +1001,12 @@ export function App() {
               <ModelInspector
                 selectedModel={selectedCatalogModel}
                 config={selectedCatalogConfig}
+                runtimeLoaded={
+                  selectedCatalogModel !== null &&
+                  runningServers.some(
+                    (server) => server.modelPath === selectedCatalogModel.path,
+                  )
+                }
                 onChange={handleCatalogConfigChange}
               />
             ) : (

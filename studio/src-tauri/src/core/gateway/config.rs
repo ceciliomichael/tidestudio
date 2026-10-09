@@ -13,7 +13,7 @@ pub struct GatewayConfig {
 impl Default for GatewayConfig {
     fn default() -> Self {
         Self {
-            port: 8080,
+            port: 3456,
             serve_on_local_network: false,
             api_key_enabled: false,
             api_key: String::new(),

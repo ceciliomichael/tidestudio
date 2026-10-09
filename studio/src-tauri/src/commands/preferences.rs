@@ -5,37 +5,45 @@ use tauri::{AppHandle, Manager};
 const DATABASE_FILE: &str = "tidestudio.sqlite3";
 
 #[tauri::command]
-pub fn get_ui_preference(app: AppHandle, key: String) -> Result<Option<String>, String> {
-    let connection = open_database(&app)?;
-    ensure_schema(&connection)?;
+pub async fn get_ui_preference(app: AppHandle, key: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let connection = open_database(&app)?;
+        ensure_schema(&connection)?;
 
-    connection
-        .query_row(
-            "SELECT value FROM ui_preferences WHERE key = ?1",
-            params![key],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| format!("failed to read UI preference: {error}"))
+        connection
+            .query_row(
+                "SELECT value FROM ui_preferences WHERE key = ?1",
+                params![key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| format!("failed to read UI preference: {error}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn set_ui_preference(app: AppHandle, key: String, value: String) -> Result<(), String> {
-    let connection = open_database(&app)?;
-    ensure_schema(&connection)?;
+pub async fn set_ui_preference(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let connection = open_database(&app)?;
+        ensure_schema(&connection)?;
 
-    connection
-        .execute(
-            "
-            INSERT INTO ui_preferences (key, value)
-            VALUES (?1, ?2)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            ",
-            params![key, value],
-        )
-        .map_err(|error| format!("failed to save UI preference: {error}"))?;
+        connection
+            .execute(
+                "
+                INSERT INTO ui_preferences (key, value)
+                VALUES (?1, ?2)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                ",
+                params![key, value],
+            )
+            .map_err(|error| format!("failed to save UI preference: {error}"))?;
 
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn open_database(app: &AppHandle) -> Result<Connection, String> {

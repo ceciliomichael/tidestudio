@@ -1,4 +1,5 @@
 import {
+  Check,
   ChevronRight,
   Copy,
   Eye,
@@ -73,6 +74,7 @@ export function ServerDashboard({
 }: Props) {
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [copiedTarget, setCopiedTarget] = useState<string | null>(null);
   const {
     containerRef,
     collapsed,
@@ -96,8 +98,17 @@ export function ServerDashboard({
   );
   const reachableEndpoint = "http://localhost:" + serverSettings.port;
 
+  function copyWithFeedback(value: string, target: string) {
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopiedTarget(target);
+      window.setTimeout(() => {
+        setCopiedTarget((current) => (current === target ? null : current));
+      }, 1400);
+    });
+  }
+
   function copyEndpoint() {
-    void navigator.clipboard.writeText(reachableEndpoint);
+    copyWithFeedback(reachableEndpoint, "endpoint");
   }
 
   async function stopModel(modelId: string) {
@@ -135,8 +146,12 @@ export function ServerDashboard({
             <code>{reachableEndpoint}</code>
             <IconButton
               className="server-page-header__copy"
-              icon={Copy}
-              label="Copy server endpoint"
+              icon={copiedTarget === "endpoint" ? Check : Copy}
+              label={
+                copiedTarget === "endpoint"
+                  ? "Server endpoint copied"
+                  : "Copy server endpoint"
+              }
               size={13}
               onClick={copyEndpoint}
             />
@@ -282,42 +297,62 @@ export function ServerDashboard({
                   </button>
 
                   <div className="running-model-card__bottom">
-                    <button
-                      className="running-model-card__select"
-                      type="button"
-                      onClick={() => onSelectServer(server.port)}
-                    >
-                      <span className="running-model-card__identity">
-                        <span className="running-model-card__model-pill">
-                          <span className="running-model-card__model-type">
-                            {model?.category ?? "LLM"}
+                    <div className="running-model-card__identity-group">
+                      <button
+                        className="running-model-card__select"
+                        type="button"
+                        onClick={() => onSelectServer(server.port)}
+                      >
+                        <span className="running-model-card__identity">
+                          <span className="running-model-card__model-pill">
+                            <span className="running-model-card__model-type">
+                              {model?.category ?? "LLM"}
+                            </span>
+                            <strong>
+                              {model?.name ?? fileName(server.modelPath)}
+                            </strong>
                           </span>
-                          <strong>
-                            {model?.name ?? fileName(server.modelPath)}
-                          </strong>
+                          {model?.quantization &&
+                          model.quantization !== "Unknown" ? (
+                            <span className="running-model-card__capability">
+                              {model.quantization}
+                            </span>
+                          ) : null}
+                          {model?.supportsMtp ? (
+                            <span className="running-model-card__capability">
+                              MTP
+                            </span>
+                          ) : null}
+                          {model?.supportsVision ? (
+                            <span
+                              className="running-model-card__capability running-model-card__capability--vision"
+                              title="Vision capable"
+                              aria-label="Vision capable"
+                            >
+                              <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
+                            </span>
+                          ) : null}
                         </span>
-                        {model?.quantization &&
-                        model.quantization !== "Unknown" ? (
-                          <span className="running-model-card__capability">
-                            {model.quantization}
-                          </span>
-                        ) : null}
-                        {model?.supportsMtp ? (
-                          <span className="running-model-card__capability">
-                            MTP
-                          </span>
-                        ) : null}
-                        {model?.supportsVision ? (
-                          <span
-                            className="running-model-card__capability running-model-card__capability--vision"
-                            title="Vision capable"
-                            aria-label="Vision capable"
-                          >
-                            <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
+                      </button>
+                      <IconButton
+                        className="running-model-card__model-copy"
+                        icon={
+                          copiedTarget === `model:${server.port}` ? Check : Copy
+                        }
+                        label={
+                          copiedTarget === `model:${server.port}`
+                            ? "API model ID copied"
+                            : "Copy API model ID"
+                        }
+                        size={12}
+                        onClick={() =>
+                          copyWithFeedback(
+                            server.modelId,
+                            `model:${server.port}`,
+                          )
+                        }
+                      />
+                    </div>
 
                     <div className="running-model-card__actions">
                       <span className="running-model-card__memory">

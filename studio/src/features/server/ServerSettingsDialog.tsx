@@ -25,10 +25,14 @@ export function ServerSettingsDialog({
   onChange,
 }: Props) {
   const [draft, setDraft] = useState(settings);
+  const [portInput, setPortInput] = useState(String(settings.port));
+  const [ttlInput, setTtlInput] = useState(String(settings.maxIdleTtlMinutes));
 
   useEffect(() => {
     if (open) {
       setDraft(settings);
+      setPortInput(String(settings.port));
+      setTtlInput(String(settings.maxIdleTtlMinutes));
     }
   }, [open, settings]);
 
@@ -41,6 +45,19 @@ export function ServerSettingsDialog({
 
   const activeKeyCount =
     draft.apiKeyEnabled && draft.apiKey.trim() ? 1 : 0;
+  const parsedPort = Number(portInput);
+  const portValid =
+    portInput.trim() !== "" &&
+    Number.isInteger(parsedPort) &&
+    parsedPort >= 1 &&
+    parsedPort <= 65535;
+  const parsedTtl = Number(ttlInput);
+  const ttlValid =
+    ttlInput.trim() !== "" &&
+    Number.isInteger(parsedTtl) &&
+    parsedTtl >= 1;
+  const apiKeyValid = !draft.apiKeyEnabled || draft.apiKey.trim() !== "";
+  const canApply = portValid && ttlValid && apiKeyValid;
 
   return (
     <Modal
@@ -50,160 +67,219 @@ export function ServerSettingsDialog({
       className="server-settings-dialog"
     >
       <div className="server-settings-dialog__body">
-        <InputField
-          label="Server Port"
-          layout="inline"
-          compact
-          type="number"
-          min={1}
-          max={65535}
-          value={draft.port}
-          onChange={(event) =>
-            update({ port: Number(event.target.value) })
-          }
-        />
+        <section className="server-settings-dialog__section">
+          <header className="server-settings-dialog__section-header">
+            <h3>Connection</h3>
+          </header>
+          <div className="server-settings-dialog__group">
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <span className="server-setting-label">
+                  <Network size={14} strokeWidth={1.9} aria-hidden="true" />
+                  <strong>Server Port</strong>
+                </span>
+                <small>Public API port</small>
+              </div>
+              <input
+                className="ui-input ui-input--compact server-settings-dialog__number"
+                type="number"
+                min={1}
+                max={65535}
+                value={portInput}
+                aria-label="Server port"
+                onChange={(event) => setPortInput(event.target.value)}
+              />
+            </div>
 
-        <div className="server-settings-dialog__row">
-          <span className="server-setting-label">
-            <KeyRound size={14} strokeWidth={1.9} aria-hidden="true" />
-            <span>Require Authentication</span>
-          </span>
-          <Switch
-            className="tide-switch"
-            checked={draft.apiKeyEnabled}
-            label="Require authentication"
-            onChange={(apiKeyEnabled) => update({ apiKeyEnabled })}
-          />
-        </div>
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <strong>Serve on Local Network</strong>
+                <small>Listen beyond localhost</small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.serveOnLocalNetwork}
+                label="Serve on local network"
+                onChange={(serveOnLocalNetwork) =>
+                  update({ serveOnLocalNetwork })
+                }
+              />
+            </div>
 
-        <div className="server-settings-dialog__row">
-          <span>Active API Keys</span>
-          <strong>{activeKeyCount}</strong>
-        </div>
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <span className="server-setting-label">
+                  <ShieldCheck size={14} strokeWidth={1.9} aria-hidden="true" />
+                  <strong>Enable CORS</strong>
+                </span>
+                <small>Allow browser-based clients</small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.corsEnabled}
+                label="Enable CORS"
+                onChange={(corsEnabled) => update({ corsEnabled })}
+              />
+            </div>
+          </div>
+        </section>
 
-        {draft.apiKeyEnabled ? (
-          <InputField
-            label="API Key"
-            type="password"
-            value={draft.apiKey}
-            placeholder="Enter API key"
-            autoComplete="off"
-            onChange={(event) => update({ apiKey: event.target.value })}
-          />
-        ) : null}
+        <section className="server-settings-dialog__section">
+          <header className="server-settings-dialog__section-header">
+            <h3>Access</h3>
+          </header>
+          <div className="server-settings-dialog__group">
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <span className="server-setting-label">
+                  <KeyRound size={14} strokeWidth={1.9} aria-hidden="true" />
+                  <strong>Require Authentication</strong>
+                </span>
+                <small>
+                  {activeKeyCount === 1 ? "1 active API key" : "No active API key"}
+                </small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.apiKeyEnabled}
+                label="Require authentication"
+                onChange={(apiKeyEnabled) => update({ apiKeyEnabled })}
+              />
+            </div>
 
-        <div className="server-settings-dialog__row">
-          <span className="server-setting-label">
-            <Network size={14} strokeWidth={1.9} aria-hidden="true" />
-            <span>Serve on Local Network</span>
-          </span>
-          <Switch
-            className="tide-switch"
-            checked={draft.serveOnLocalNetwork}
-            label="Serve on local network"
-            onChange={(serveOnLocalNetwork) =>
-              update({ serveOnLocalNetwork })
-            }
-          />
-        </div>
+            {draft.apiKeyEnabled ? (
+              <div className="server-settings-dialog__api-key">
+                <InputField
+                  label="API Key"
+                  type="password"
+                  value={draft.apiKey}
+                  placeholder="Enter API key"
+                  autoComplete="off"
+                  onChange={(event) => update({ apiKey: event.target.value })}
+                />
+              </div>
+            ) : null}
 
-        <div className="server-settings-dialog__row">
-          <span>Allow per-request MCPs</span>
-          <Switch
-            className="tide-switch"
-            checked={draft.allowPerRequestMcps}
-            label="Allow per-request MCPs"
-            onChange={(allowPerRequestMcps) =>
-              update({ allowPerRequestMcps })
-            }
-          />
-        </div>
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <strong>Allow per-request MCPs</strong>
+                <small>Permit MCP configuration in requests</small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.allowPerRequestMcps}
+                label="Allow per-request MCPs"
+                onChange={(allowPerRequestMcps) =>
+                  update({ allowPerRequestMcps })
+                }
+              />
+            </div>
 
-        <div className="server-settings-dialog__row is-disabled">
-          <span>Allow calling servers from mcp.json</span>
-          <Switch
-            className="tide-switch"
-            checked={draft.allowMcpJsonServers}
-            disabled
-            label="Allow calling servers from mcp.json"
-            onChange={() => undefined}
-          />
-        </div>
+            <div className="server-settings-dialog__item is-disabled">
+              <div className="server-settings-dialog__item-copy">
+                <strong>Allow mcp.json servers</strong>
+                <small>Not available yet</small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.allowMcpJsonServers}
+                disabled
+                label="Allow calling servers from mcp.json"
+                onChange={() => undefined}
+              />
+            </div>
+          </div>
+        </section>
 
-        <div className="server-settings-dialog__row">
-          <span className="server-setting-label">
-            <ShieldCheck size={14} strokeWidth={1.9} aria-hidden="true" />
-            <span>Enable CORS</span>
-          </span>
-          <Switch
-            className="tide-switch"
-            checked={draft.corsEnabled}
-            label="Enable CORS"
-            onChange={(corsEnabled) => update({ corsEnabled })}
-          />
-        </div>
+        <section className="server-settings-dialog__section">
+          <header className="server-settings-dialog__section-header">
+            <h3>Runtime</h3>
+          </header>
+          <div className="server-settings-dialog__group">
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <strong>Just-in-Time Model Loading</strong>
+                <small>Load models when requested</small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.jitModelLoading}
+                label="Just-in-Time model loading"
+                onChange={(jitModelLoading) => update({ jitModelLoading })}
+              />
+            </div>
 
-        <div className="server-settings-dialog__row">
-          <span>Just-in-Time Model Loading</span>
-          <Switch
-            className="tide-switch"
-            checked={draft.jitModelLoading}
-            label="Just-in-Time model loading"
-            onChange={(jitModelLoading) => update({ jitModelLoading })}
-          />
-        </div>
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <strong>Auto unload unused models</strong>
+                <small>Release idle JIT-loaded workers</small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.autoUnloadJitModels}
+                label="Auto unload unused JIT loaded models"
+                onChange={(autoUnloadJitModels) =>
+                  update({ autoUnloadJitModels })
+                }
+              />
+            </div>
 
-        <div className="server-settings-dialog__row">
-          <span>Auto unload unused JIT loaded models</span>
-          <Switch
-            className="tide-switch"
-            checked={draft.autoUnloadJitModels}
-            label="Auto unload unused JIT loaded models"
-            onChange={(autoUnloadJitModels) =>
-              update({ autoUnloadJitModels })
-            }
-          />
-        </div>
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <span className="server-setting-label">
+                  <TimerReset size={14} strokeWidth={1.9} aria-hidden="true" />
+                  <strong>Max idle TTL</strong>
+                </span>
+                <small>Minutes before an idle model unloads</small>
+              </div>
+              <input
+                className="ui-input ui-input--compact server-settings-dialog__number"
+                type="number"
+                min={1}
+                value={ttlInput}
+                aria-label="Maximum idle TTL in minutes"
+                onChange={(event) => setTtlInput(event.target.value)}
+              />
+            </div>
 
-        <InputField
-          label={
-            <span className="server-setting-label">
-              <TimerReset size={14} strokeWidth={1.9} aria-hidden="true" />
-              <span>Max idle TTL (minutes)</span>
-            </span>
-          }
-          layout="inline"
-          compact
-          type="number"
-          min={1}
-          value={draft.maxIdleTtlMinutes}
-          onChange={(event) =>
-            update({ maxIdleTtlMinutes: Number(event.target.value) })
-          }
-        />
+            <div className="server-settings-dialog__item">
+              <div className="server-settings-dialog__item-copy">
+                <strong>Only Keep Last JIT Model</strong>
+                <small>Keep one JIT-loaded worker at a time</small>
+              </div>
+              <Switch
+                className="tide-switch"
+                checked={draft.onlyKeepLastJitModel}
+                label="Only keep last JIT loaded model"
+                onChange={(onlyKeepLastJitModel) =>
+                  update({ onlyKeepLastJitModel })
+                }
+              />
+            </div>
+          </div>
+        </section>
+      </div>
 
-        <div className="server-settings-dialog__row">
-          <span>Only Keep Last JIT Loaded Model</span>
-          <Switch
-            className="tide-switch"
-            checked={draft.onlyKeepLastJitModel}
-            label="Only keep last JIT loaded model"
-            onChange={(onlyKeepLastJitModel) =>
-              update({ onlyKeepLastJitModel })
-            }
-          />
-        </div>
-
+      <footer className="server-settings-dialog__footer">
+        <Button variant="secondary" size="compact" onClick={onClose}>
+          Cancel
+        </Button>
         <Button
           variant="primary"
+          size="compact"
+          disabled={!canApply}
           onClick={() => {
-            onChange(draft);
+            onChange({
+              ...draft,
+              port: parsedPort,
+              maxIdleTtlMinutes: parsedTtl,
+            });
             onClose();
           }}
         >
-          Apply Server Settings
+          Apply Settings
         </Button>
-      </div>
+      </footer>
     </Modal>
   );
 }

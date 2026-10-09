@@ -123,11 +123,11 @@ Server/network settings such as port must not appear in the Models inspector. Mo
 
 The Server center workspace uses a vertical split similar to LM Studio: an inset, independently scrollable running-model region on top and a docked API Logs panel on the bottom. Running models are full-width cards inside the inset region with visible margin on all sides. Only real managed llama-server processes appear as loaded models; the empty state remains empty when nothing is running.
 
-At the top of the Server center workspace, show a compact control strip with runtime status, Server Settings, the future `mcp.json` entry, the current reachable endpoint with copy action, and Load Model. Follow it with a simple `Loaded Models` heading before the runtime cards.
+At the top of the Server center workspace, show a compact control strip with runtime status, Server Settings, the future `mcp.json` entry, the current reachable endpoint with copy action, and Load Model. Copy actions use temporary checkmark feedback after a successful clipboard write. Follow it with a simple `Loaded Models` heading before the runtime cards.
 
 `Load Model` opens a compact desktop-picker dialog rather than navigating away. Position it in the upper portion of the window instead of vertically centering it. Use a search-first top bar, a small sort segmented control, and one dense model list with inline quantization/MTP/publisher metadata. Unloaded rows themselves are the Load action and show only a chevron affordance; loaded models stay in the same list and expose compact Loading/Stop state matching the loaded-model cards. Clicking an unloaded row closes the dialog immediately and inserts an optimistic Loading card.
 
-`Server Settings` opens a dedicated settings dialog. Server-wide settings such as public port, authentication, LAN binding, CORS, MCP policy, and JIT loading do not belong in the right inspector.
+`Server Settings` opens a dedicated grouped settings dialog. Use compact Connection, Access, and Runtime sections with aligned rows and a footer for Cancel/Apply. Server-wide settings such as public port, authentication, LAN binding, CORS, MCP policy, and JIT loading do not belong in the right inspector.
 
 On the Server page, the right inspector is model-focused and reuses the same Info / Load / Inference model inspector used by Models. Selecting a loaded model in the center updates that inspector.
 
@@ -135,7 +135,7 @@ API Logs is a bottom dock rather than a floating card. Its header remains visibl
 
 Place a floating, rounded, collapsible Supported Endpoints panel at the bottom of the upper Server region, above the logs dock. Its header toggles the panel open/closed. Default it to collapsed, and persist its collapsed/open state across app restarts in SQLite. Keep the panel wide across the Server workspace while the segmented control stays compact. Use the shared `SegmentedField` to switch between OpenAI-compatible, Anthropic-compatible, and TypeSafe-compatible endpoint families.
 
-Server-wide startup/restart settings such as public gateway port, local-network binding, API-key authentication, CORS, MCP policy, and JIT policy live in the dedicated Server Settings dialog, not the right inspector. Public gateway settings take effect together through Apply, persist across app launches, and private llama.cpp worker ports are not user-configurable.
+Server-wide startup/restart settings such as public gateway port, local-network binding, API-key authentication, CORS, MCP policy, and JIT policy live in the dedicated Server Settings dialog, not the right inspector. Public gateway settings take effect together through Apply, persist across app launches, and private llama.cpp worker ports are not user-configurable. At app startup, gateway launch is background work and must not gate loading local workers.
 
 Keep configuration vertically scannable and compact. Avoid turning each option into a separate card.
 

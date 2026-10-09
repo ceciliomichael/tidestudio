@@ -25,21 +25,6 @@ impl GatewayClient {
         format!("http://127.0.0.1:{}{}", config.port, path)
     }
 
-    pub(super) fn healthy(&self, config: &GatewayConfig) -> bool {
-        let api_key = if config.api_key_enabled {
-            config.api_key.as_str()
-        } else {
-            ""
-        };
-
-        self.client
-            .get(Self::url(config, "/health"))
-            .header("Authorization", format!("Bearer {api_key}"))
-            .send()
-            .map(|response| response.status().is_success())
-            .unwrap_or(false)
-    }
-
     pub(super) fn register(
         &self,
         config: &GatewayConfig,

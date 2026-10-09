@@ -39,9 +39,10 @@
 - TideStudio public API routing uses the Go-based API gateway under `studio/api-gateway/` in front of private loopback llama.cpp workers, with one public port and OpenAI, Anthropic, and TypeSafe System One compatibility; Rust/Tauri remains the desktop/process integration layer.
 - TideStudio should use a comfortable desktop UI scale. Avoid tiny 8-10px text for important labels and metadata; prefer roughly 12-14px readable text, 34-40px controls, flat list rows, and restrained separators.
 - Keep loaded-model entries as a two-row component: state/chevron on the first row, model identity/capabilities and RAM/Stop actions on the second row.
-- Loading a model must not block TideStudio UI or hold the server registry lock across llama.cpp readiness. Show the worker immediately as Loading, transition it to Ready after worker health + gateway registration succeed, and surface failed startup asynchronously.
+- Loading a model must not block TideStudio UI or depend on API gateway readiness. Show the worker immediately as Loading, transition it to Ready when the worker itself is healthy, then register it with the gateway asynchronously when available. Gateway startup/reconfiguration must reconcile already-ready workers.
+- Background gateway startup must not hold the gateway mutex across health polling, and gateway status commands must not synchronously block the Tauri UI command thread.
 - Model loading is optimistic in the Server UI: clicking Load closes the modal and immediately inserts a pending Loading card before the Rust start command returns. Replace that pending card with the real worker status once spawn succeeds.
-- Keep the Load Model dialog compact and dense rather than a near-full-workspace modal. Position it toward the upper window area, use a search-first desktop-picker layout, one dense model list, inline metadata, and compact Loading/Eject state.
+- Keep the Load Model dialog compact and dense rather than a near-full-workspace modal. Position it toward the upper window area, use a search-first desktop-picker layout, one dense model list, inline metadata, and compact Loading/Stop state.
 - In the Load Model picker, make the entire unloaded model row clickable instead of showing a dedicated Load button.
 - Supported Endpoints should read as a wide floating rounded utility panel, while its segmented control remains compact.
 - Server RAM polling should refresh only the managed worker PID rather than scanning all system processes.
@@ -49,6 +50,9 @@
 - Loaded-model Inference changes should apply to subsequent requests immediately where request-time overrides are supported; Load settings remain next-load settings.
 - Explicit inference request fields must override TideStudio's saved per-model defaults.
 - Persist Server Settings across launches in TideStudio SQLite.
+- Numeric server settings inputs that users may clear while editing must keep a string draft instead of coercing every keystroke with `Number(...)`; the default server port is 3456.
+- Default model reasoning budget is 1024 unless a saved per-model value overrides it.
+- Loaded-model cards expose a compact copy action for the exact public API model ID; successful copy actions should switch to a checkmark briefly, including the public API endpoint copy control.
 - Keep llama.cpp's Web UI disabled for managed workers with `--no-webui`.
 - Show detected quantization in loaded-model cards when known.
 - Render repository README/model-card Markdown properly in the Model Search right inspector for both Hugging Face and ModelScope.

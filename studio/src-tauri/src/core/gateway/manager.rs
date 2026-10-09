@@ -1,10 +1,6 @@
 use super::{GatewayConfig, client::GatewayClient, process::spawn_gateway};
 use crate::core::config::InferenceDefaults;
-use std::{
-    process::Child,
-    thread,
-    time::{Duration, Instant},
-};
+use std::process::Child;
 
 #[derive(Default)]
 pub struct GatewayManager {
@@ -14,7 +10,7 @@ pub struct GatewayManager {
 }
 
 impl GatewayManager {
-    pub fn ensure(&mut self, config: GatewayConfig) -> Result<(), String> {
+    pub fn start(&mut self, config: GatewayConfig) -> Result<(), String> {
         if self.config.as_ref() == Some(&config) && self.is_running() {
             return Ok(());
         }
@@ -24,24 +20,10 @@ impl GatewayManager {
             return Err("authentication requires an API key".to_string());
         }
 
-        let mut child = spawn_gateway(&config, &self.client.token)?;
-        let deadline = Instant::now() + Duration::from_secs(8);
-
-        while Instant::now() < deadline {
-            if let Some(exit) = child.try_wait().map_err(|error| error.to_string())? {
-                return Err(format!("API gateway exited during startup: {exit}"));
-            }
-            if self.client.healthy(&config) {
-                self.config = Some(config);
-                self.child = Some(child);
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-
-        let _ = child.kill();
-        let _ = child.wait();
-        Err("API gateway startup timed out".to_string())
+        let child = spawn_gateway(&config, &self.client.token)?;
+        self.config = Some(config);
+        self.child = Some(child);
+        Ok(())
     }
 
     pub fn register(
@@ -70,7 +52,11 @@ impl GatewayManager {
         })
     }
 
-    fn shutdown(&mut self) {
+    pub fn matches_config(&self, config: &GatewayConfig) -> bool {
+        self.config.as_ref() == Some(config)
+    }
+
+    pub fn shutdown(&mut self) {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();

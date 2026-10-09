@@ -17,7 +17,7 @@ impl Default for AppState {
         Self {
             servers: Mutex::new(ServerRegistry::new(Box::new(LlamaCppBackend))),
             gateway: Mutex::new(GatewayManager::default()),
-            gateway_port: Mutex::new(8080),
+            gateway_port: Mutex::new(3456),
         }
     }
 }
@@ -47,6 +47,7 @@ pub fn run() {
             commands::server::server_status,
             commands::server::server_logs,
             commands::server::configure_gateway,
+            commands::server::configure_gateway_background,
             commands::server::gateway_status,
         ])
         .run(tauri::generate_context!())

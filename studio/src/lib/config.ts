@@ -96,7 +96,7 @@ export function createDefaultModelConfig(): ModelConfig {
     chatTemplate: "",
     thinkingEnabled: false,
     reasoningEffort: "default",
-    reasoningBudget: -1,
+    reasoningBudget: 1024,
     reasoningPreserve: true,
     temperature: 0.8,
     topK: 40,
@@ -182,7 +182,7 @@ export function liveInferenceDefaultsFromConfig(
 
 export function createDefaultServerSettings(): ServerSettings {
   return {
-    port: 8080,
+    port: 3456,
     serveOnLocalNetwork: false,
     apiKeyEnabled: false,
     apiKey: "",

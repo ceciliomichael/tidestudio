@@ -9,18 +9,24 @@ use serde_json::Value;
 use tauri::Manager;
 
 #[tauri::command]
-pub fn list_models() -> Result<Vec<ModelInfo>, String> {
-    discover_models()
+pub async fn list_models() -> Result<Vec<ModelInfo>, String> {
+    tauri::async_runtime::spawn_blocking(discover_models)
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn load_model_settings(model_path: String) -> Result<Option<Value>, String> {
-    load_settings(&model_path)
+pub async fn load_model_settings(model_path: String) -> Result<Option<Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || load_settings(&model_path))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn save_model_settings(model_path: String, settings: Value) -> Result<(), String> {
-    save_settings(&model_path, &settings)
+pub async fn save_model_settings(model_path: String, settings: Value) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || save_settings(&model_path, &settings))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

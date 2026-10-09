@@ -72,7 +72,11 @@ export function ModelInferenceTab({
             rows={5}
             value={config.systemPrompt}
             placeholder="You are a helpful assistant."
-            hint="Stored as the model's request default. It is not a server launch flag."
+            hint={
+              runtimeLoaded
+                ? "Applies immediately to new requests. A request-provided system prompt overrides it."
+                : "Saved as this model's default system prompt. A request-provided system prompt overrides it."
+            }
             onChange={(event) =>
               update({ systemPrompt: event.target.value })
             }

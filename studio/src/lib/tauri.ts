@@ -60,6 +60,9 @@ export type GatewayConfig = {
 export const configureGateway = (config: GatewayConfig) =>
   invoke<void>("configure_gateway", { config });
 
+export const configureGatewayBackground = (config: GatewayConfig) =>
+  invoke<void>("configure_gateway_background", { config });
+
 export const gatewayStatus = () => invoke<boolean>("gateway_status");
 
 export const listModels = () => invoke<ModelInfo[]>("list_models");

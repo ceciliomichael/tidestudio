@@ -9,7 +9,7 @@ use crate::{
 };
 use serde::Serialize;
 use std::{net::TcpListener, path::Path, time::Duration};
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, Manager};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,30 +94,9 @@ fn finish_server_start(
 
         if worker_is_ready(&client, loading_status) {
             let state = app.state::<AppState>();
-            let defaults = {
-                let servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
-                if !servers.matches_model(loading_status.port, &loading_status.model_id) {
-                    return Ok(None);
-                }
-                servers
-                    .inference_defaults(loading_status.port)
-                    .ok_or_else(|| "missing worker inference defaults".to_string())?
-            };
-
-            {
-                let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-                if !gateway.is_running() {
-                    return Err("API gateway stopped while the model was loading.".into());
-                }
-                gateway.register(&loading_status.model_id, loading_status.port, &defaults)?;
-            }
-
             let ready_status = {
                 let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
                 if !servers.matches_model(loading_status.port, &loading_status.model_id) {
-                    drop(servers);
-                    let gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-                    let _ = gateway.unregister(&loading_status.model_id);
                     return Ok(None);
                 }
                 servers.mark_ready(loading_status.port)?
@@ -149,9 +128,14 @@ fn cleanup_failed_start(app: &tauri::AppHandle, loading_status: &ServerStatus, e
     };
 
     if should_unregister {
-        if let Ok(gateway) = state.gateway.lock() {
-            let _ = gateway.unregister(&loading_status.model_id);
-        }
+        let unregister_app = app.clone();
+        let model_id = loading_status.model_id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = unregister_app.state::<AppState>();
+            if let Ok(gateway) = state.gateway.lock() {
+                let _ = gateway.unregister(&model_id);
+            }
+        });
     }
 
     let _ = app.emit(
@@ -165,46 +149,139 @@ fn cleanup_failed_start(app: &tauri::AppHandle, loading_status: &ServerStatus, e
     );
 }
 
-#[tauri::command]
-pub async fn configure_gateway(app: tauri::AppHandle, config: GatewayConfig) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        let workers = {
-            let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
-            let statuses = servers
-                .list()?
-                .into_iter()
-                .filter(|status| status.running && status.state == ServerLifecycle::Ready)
-                .collect::<Vec<_>>();
-            statuses
-                .into_iter()
-                .filter_map(|status| {
-                    servers
-                        .inference_defaults(status.port)
-                        .map(|defaults| (status, defaults))
-                })
-                .collect::<Vec<_>>()
+fn configure_gateway_now(app: &tauri::AppHandle, config: GatewayConfig) -> Result<(), String> {
+    let state = app.state::<AppState>();
+
+    {
+        let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
+        gateway.start(config.clone())?;
+    }
+
+    *state
+        .gateway_port
+        .lock()
+        .map_err(|_| "gateway port lock poisoned")? = config.port;
+
+    let health_client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(250))
+        .no_proxy()
+        .build()
+        .map_err(|error| error.to_string())?;
+    let health_url = format!("http://127.0.0.1:{}/health", config.port);
+    let api_key = if config.api_key_enabled {
+        config.api_key.as_str()
+    } else {
+        ""
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+
+    loop {
+        let process_running = {
+            let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
+            if !gateway.matches_config(&config) {
+                return Ok(());
+            }
+            gateway.is_running()
         };
 
-        let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-        gateway.ensure(config.clone())?;
-        *state
-            .gateway_port
-            .lock()
-            .map_err(|_| "gateway port lock poisoned")? = config.port;
-        for (worker, defaults) in workers {
-            gateway.register(&worker.model_id, worker.port, &defaults)?;
+        if !process_running {
+            return Err("API gateway exited during startup".to_string());
         }
-        Ok(())
-    })
-    .await
-    .map_err(|error| error.to_string())?
+
+        let healthy = health_client
+            .get(&health_url)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .send()
+            .is_ok_and(|response| response.status().is_success());
+        if healthy {
+            break;
+        }
+
+        if std::time::Instant::now() >= deadline {
+            let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
+            if gateway.matches_config(&config) {
+                gateway.shutdown();
+            }
+            return Err("API gateway startup timed out".to_string());
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    let workers = {
+        let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
+        servers
+            .list()?
+            .into_iter()
+            .filter(|status| status.running && status.state == ServerLifecycle::Ready)
+            .filter_map(|status| {
+                servers
+                    .inference_defaults(status.port)
+                    .map(|defaults| (status, defaults))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
+    for (worker, defaults) in workers {
+        gateway.register(&worker.model_id, worker.port, &defaults)?;
+    }
+
+    Ok(())
+}
+
+fn register_ready_worker(app: &tauri::AppHandle, status: &ServerStatus) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let defaults = {
+        let servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
+        servers
+            .inference_defaults(status.port)
+            .ok_or_else(|| "missing worker inference defaults".to_string())?
+    };
+
+    let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
+    if gateway.is_running() {
+        gateway.register(&status.model_id, status.port, &defaults)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
-pub fn gateway_status(state: State<'_, AppState>) -> Result<bool, String> {
-    let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-    Ok(gateway.is_running())
+pub async fn configure_gateway(app: tauri::AppHandle, config: GatewayConfig) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || configure_gateway_now(&app, config))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn configure_gateway_background(
+    app: tauri::AppHandle,
+    config: GatewayConfig,
+) -> Result<(), String> {
+    if config.api_key_enabled && config.api_key.trim().is_empty() {
+        return Err("authentication requires an API key".to_string());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = configure_gateway_now(&app, config);
+        let _ = app.emit("gateway-status-changed", result.is_ok());
+        if let Err(error) = result {
+            let _ = app.emit("gateway-start-failed", error);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn gateway_status(app: tauri::AppHandle) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
+        Ok(gateway.is_running())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -215,13 +292,6 @@ pub async fn start_server(
     let spawn_app = app.clone();
     let (status, needs_readiness) = tauri::async_runtime::spawn_blocking(move || {
         let state = spawn_app.state::<AppState>();
-
-        {
-            let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-            if !gateway.is_running() {
-                return Err("API gateway is not running. Apply Server Settings first.".into());
-            }
-        }
 
         config.model_id = public_model_id(&config.model_path)?;
 
@@ -265,7 +335,8 @@ pub async fn start_server(
         tauri::async_runtime::spawn_blocking(move || {
             match finish_server_start(&readiness_app, &loading_status) {
                 Ok(Some(ready_status)) => {
-                    let _ = readiness_app.emit("server-status-changed", ready_status);
+                    let _ = readiness_app.emit("server-status-changed", ready_status.clone());
+                    let _ = register_ready_worker(&readiness_app, &ready_status);
                 }
                 Ok(None) => {}
                 Err(error) => cleanup_failed_start(&readiness_app, &loading_status, error),
@@ -285,13 +356,14 @@ pub async fn stop_server(app: tauri::AppHandle, port: u16) -> Result<ServerStatu
             servers.stop(port)?
         };
 
-        let gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-        let unregister_error = gateway.unregister(&status.model_id).err();
-        if let Some(error) = unregister_error {
-            return Err(format!(
-                "worker stopped, but gateway unregister failed: {error}"
-            ));
-        }
+        let unregister_app = app.clone();
+        let model_id = status.model_id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = unregister_app.state::<AppState>();
+            if let Ok(gateway) = state.gateway.lock() {
+                let _ = gateway.unregister(&model_id);
+            }
+        });
 
         Ok(status)
     })
@@ -317,8 +389,10 @@ pub async fn update_server_inference(
         };
 
         if status.running && status.state == ServerLifecycle::Ready {
-            let gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-            gateway.register(&status.model_id, status.port, &defaults)?;
+            let registration_app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let _ = register_ready_worker(&registration_app, &status);
+            });
         }
 
         Ok(())
