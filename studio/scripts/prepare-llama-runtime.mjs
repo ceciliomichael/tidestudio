@@ -1,4 +1,11 @@
-import { createWriteStream, existsSync } from "node:fs";
+import {
+  closeSync,
+  createWriteStream,
+  existsSync,
+  openSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -20,9 +27,36 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const studioDir = resolve(scriptDir, "..");
 const runtimeDir = join(studioDir, "runtime", "llama.cpp");
 const serverPath = join(runtimeDir, "llama-server.exe");
+const REQUIRED_CUDA_FILES = [
+  "ggml-cuda.dll",
+  "cudart64_13.dll",
+  "cublas64_13.dll",
+  "cublasLt64_13.dll",
+];
+
+function isRealPeFile(path) {
+  if (!existsSync(path) || statSync(path).size < 1024) {
+    return false;
+  }
+  const fd = openSync(path, "r");
+  try {
+    const signature = Buffer.allocUnsafe(2);
+    return (
+      readSync(fd, signature, 0, 2, 0) === 2 &&
+      signature[0] === 0x4d &&
+      signature[1] === 0x5a
+    );
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function cudaRuntimeFilesValid() {
+  return REQUIRED_CUDA_FILES.every((file) => isRealPeFile(join(runtimeDir, file)));
+}
 
 function runtimeMatches() {
-  if (!existsSync(serverPath)) {
+  if (!isRealPeFile(serverPath) || !cudaRuntimeFilesValid()) {
     return false;
   }
 
@@ -31,7 +65,10 @@ function runtimeMatches() {
     windowsHide: true,
   });
   const versionText = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-  return result.status === 0 && versionText.includes(`build ${LLAMA_BUILD}`);
+  return (
+    result.status === 0 &&
+    versionText.includes(`build ${LLAMA_BUILD}`)
+  );
 }
 
 async function download(url, destination) {
@@ -78,6 +115,7 @@ async function main() {
     return;
   }
 
+  await rm(runtimeDir, { recursive: true, force: true });
   await mkdir(runtimeDir, { recursive: true });
   const tempDir = await mkdtemp(join(tmpdir(), "tidestudio-llama-"));
 
@@ -92,7 +130,7 @@ async function main() {
 
     if (!runtimeMatches()) {
       throw new Error(
-        `Downloaded llama.cpp runtime does not report expected build ${LLAMA_BUILD}.`,
+        `Downloaded llama.cpp runtime ${LLAMA_TAG} is incomplete.`,
       );
     }
 

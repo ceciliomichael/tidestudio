@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -22,6 +23,19 @@ func main() {
 		Addr:              cfg.Addr,
 		Handler:           httpapi.New(cfg),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if parent := os.Getenv("TIDE_GATEWAY_PARENT_PID"); parent != "" {
+		pid, err := strconv.ParseUint(parent, 10, 32)
+		if err != nil || pid == 0 {
+			log.Fatalf("invalid TideStudio parent PID: %q", parent)
+		}
+		if err := watchParentExit(uint32(pid), func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = server.Shutdown(ctx)
+		}); err != nil {
+			log.Fatalf("could not watch TideStudio parent process: %v", err)
+		}
 	}
 
 	quit := make(chan os.Signal, 1)

@@ -43,6 +43,7 @@ pub(super) fn spawn_gateway(config: &GatewayConfig, token: &str) -> Result<Child
         .env("TIDE_GATEWAY_API_KEY", api_key)
         .env("TIDE_GATEWAY_CORS", config.cors_enabled.to_string())
         .env("TIDE_GATEWAY_CONTROL_TOKEN", token)
+        .env("TIDE_GATEWAY_PARENT_PID", std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

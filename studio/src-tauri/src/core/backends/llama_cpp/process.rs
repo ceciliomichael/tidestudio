@@ -64,6 +64,10 @@ pub fn spawn_llama_server(
         return Err(format!("model does not exist: {}", model_path.display()));
     }
 
+    if config.gpu_layers.is_some_and(|layers| layers > 0) {
+        ensure_cuda_available(executable)?;
+    }
+
     let mut command = Command::new(executable);
     command
         .arg("--model")
@@ -104,7 +108,8 @@ pub fn spawn_llama_server(
                 command.arg("--pooling").arg(&config.embedding_pooling);
             }
         }
-        "Drafter" | "DECISION" => {}
+        "Drafter" => {}
+        "DECISION" => add_decision_runtime_args(&mut command, config),
         _ => {}
     }
 
@@ -125,6 +130,39 @@ pub fn spawn_llama_server(
     }
 
     Ok(LlamaCppInstance { child, logs })
+}
+
+fn ensure_cuda_available(executable: &Path) -> Result<(), String> {
+    let output = Command::new(executable)
+        .arg("--list-devices")
+        .output()
+        .map_err(|error| format!("failed to inspect llama.cpp GPU devices: {error}"))?;
+    let device_list = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if output.status.success()
+        && (device_list.contains("CUDA0") || device_list.to_ascii_lowercase().contains("nvidia"))
+    {
+        return Ok(());
+    }
+
+    Err(
+        "GPU offload was requested, but the bundled llama.cpp CUDA backend did not expose an NVIDIA device. Run `npm run prepare:llama` to repair the CUDA runtime."
+            .to_string(),
+    )
+}
+
+fn add_decision_runtime_args(command: &mut Command, config: &ServerConfig) {
+    let encoder_batch = config.context_size.unwrap_or(8_192).clamp(1, 8_192);
+    command
+        .arg("--parallel")
+        .arg("1")
+        .arg("--batch-size")
+        .arg(encoder_batch.to_string())
+        .arg("--ubatch-size")
+        .arg(encoder_batch.to_string());
 }
 
 fn add_prompt_args(command: &mut Command, config: &ServerConfig) {

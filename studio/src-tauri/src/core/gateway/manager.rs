@@ -1,5 +1,6 @@
 use super::{GatewayConfig, client::GatewayClient, process::spawn_gateway};
 use crate::core::config::InferenceDefaults;
+use std::net::TcpListener;
 use std::process::Child;
 
 #[derive(Default)]
@@ -19,6 +20,19 @@ impl GatewayManager {
         if config.api_key_enabled && config.api_key.trim().is_empty() {
             return Err("authentication requires an API key".to_string());
         }
+
+        let host = if config.serve_on_local_network {
+            "0.0.0.0"
+        } else {
+            "127.0.0.1"
+        };
+        let listener = TcpListener::bind((host, config.port)).map_err(|error| {
+            format!(
+                "API port {} is already in use or unavailable ({error}). Stop the other process using this port, or choose another port in Server Settings.",
+                config.port
+            )
+        })?;
+        drop(listener);
 
         let child = spawn_gateway(&config, &self.client.token)?;
         self.config = Some(config);
@@ -68,5 +82,26 @@ impl GatewayManager {
 impl Drop for GatewayManager {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn occupied_port_returns_specific_error_without_starting_gateway() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("reserve test port");
+        let port = listener.local_addr().expect("listener address").port();
+        let config = GatewayConfig {
+            port,
+            ..GatewayConfig::default()
+        };
+        let mut gateway = GatewayManager::default();
+
+        let error = gateway.start(config).expect_err("occupied port must fail");
+        assert!(error.contains(&format!("API port {port}")));
+        assert!(error.contains("already in use"));
+        assert!(!gateway.is_running());
     }
 }
