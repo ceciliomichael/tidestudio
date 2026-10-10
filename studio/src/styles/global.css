@@ -183,93 +183,6 @@ h2 {
   gap: 8px;
 }
 
-.topbar-downloads {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.topbar-download-button {
-  width: 32px;
-  height: 32px;
-  border-color: transparent;
-  background: transparent;
-}
-
-.topbar-download-badge {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  min-width: 16px;
-  height: 16px;
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--color-sidebar);
-  border-radius: 999px;
-  padding: 0 4px;
-  color: #ffffff;
-  background: var(--color-brand);
-  font-size: 11px;
-  font-weight: 700;
-  pointer-events: none;
-}
-
-.download-activity-popover {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 100;
-  width: min(420px, calc(100vw - 32px));
-  max-height: min(580px, calc(100vh - 84px));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface);
-  box-shadow: 0 14px 42px rgb(16 16 17 / 0.16);
-}
-
-.download-activity-popover__header {
-  min-height: 54px;
-  flex: 0 0 54px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 10px 0 14px;
-  border-bottom: 1px solid var(--color-border-muted);
-}
-
-.download-activity-popover__header > div {
-  min-width: 0;
-}
-
-.download-activity-popover__header strong {
-  display: block;
-  color: var(--color-foreground);
-  font-size: 14px;
-  font-weight: 620;
-}
-
-.download-activity-popover__header span {
-  display: block;
-  margin-top: 2px;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
-
-.download-activity-popover__close {
-  width: 30px;
-  height: 30px;
-  border-color: transparent;
-  background: transparent;
-}
-
-.download-activity-popover__body {
-  min-height: 0;
-  overflow-y: auto;
-}
-
 .download-activity-section + .download-activity-section {
   border-top: 1px solid var(--color-border-muted);
 }
@@ -3900,11 +3813,6 @@ h2 {
   padding-inline: 22px 20px;
 }
 
-.topbar-download-button {
-  width: 36px;
-  height: 36px;
-}
-
 .navigation-panel {
   padding: 14px 12px 18px 20px;
 }
@@ -4255,20 +4163,6 @@ h2 {
   font-size: 12px;
 }
 
-.download-activity-popover {
-  width: min(460px, calc(100vw - 32px));
-}
-
-.download-activity-popover__header {
-  min-height: 60px;
-  flex-basis: 60px;
-}
-
-.download-activity-popover__header strong {
-  font-size: 15px;
-}
-
-.download-activity-popover__header span,
 .download-activity-section__heading,
 .download-activity-card__identity strong {
   font-size: 13px;
@@ -4478,35 +4372,9 @@ body {
   flex: 1 1 auto;
 }
 
-.navigation-footer {
+.navigation-settings-button {
   flex: 0 0 auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border-muted);
-}
-
-.topbar-downloads {
-  width: 100%;
-}
-
-.navigation-download-button {
-  width: 100%;
-  min-height: 38px;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 9px;
-  border: 0;
-  border-radius: 8px;
-  padding: 7px 9px;
-  color: var(--color-muted-foreground);
-  background: transparent;
-  text-align: left;
-}
-
-.navigation-download-button:hover,
-.navigation-download-button[aria-expanded="true"] {
-  color: var(--color-foreground);
-  background: var(--color-sidebar-hover);
+  margin-top: auto;
 }
 
 .navigation-download-badge {
@@ -4522,14 +4390,6 @@ body {
   font-weight: 680;
 }
 
-.download-activity-popover {
-  z-index: 120;
-  right: auto;
-  left: 0;
-  bottom: calc(100% + 8px);
-  top: auto;
-}
-
 .main-panel,
 .inspector-panel {
   min-height: 0;
@@ -4539,13 +4399,133 @@ body {
 }
 
 .main-panel {
+  border-top: 1px solid var(--color-border-muted);
   border-left: 1px solid var(--color-border-muted);
   border-radius: var(--radius-panel) 0 0 0;
   container-type: inline-size;
 }
 
 .inspector-panel {
+  border-top: 1px solid var(--color-border-muted);
   border-left: 1px solid var(--color-border-muted);
+}
+
+/* Downloads uses the current activity-card visual language as a full workspace page. */
+.download-activity-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.download-activity-page__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: 78px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.download-activity-page__header h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
+}
+
+.download-activity-page__header p {
+  margin: 4px 0 0;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.download-activity-page__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.download-activity-page__content {
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
+}
+
+.download-activity-page__section + .download-activity-page__section {
+  margin-top: 26px;
+}
+
+.download-activity-page__section-heading {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.download-activity-page__section-heading h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.download-activity-page__section-heading > span {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.download-activity-page .download-activity-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  gap: 12px;
+  padding: 0;
+}
+
+.download-activity-page .download-activity-card {
+  padding: 16px;
+}
+
+.download-activity-page .download-activity-card__identity strong,
+.download-activity-page .download-activity-completed__row strong {
+  font-size: 14px;
+}
+
+.download-activity-page .download-activity-card__identity span,
+.download-activity-page .download-activity-completed__row div > span,
+.download-activity-page .download-activity-completed__row > span {
+  font-size: 12px;
+}
+
+.download-activity-page .download-activity-card__metrics span {
+  font-size: 12px;
+}
+
+.download-activity-page .download-activity-card__metrics strong {
+  font-size: 13px;
+}
+
+.download-activity-page .download-activity-completed {
+  overflow: hidden;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 10px;
+}
+
+.download-activity-page .download-activity-completed__row {
+  min-height: 62px;
+  padding: 11px 16px;
+}
+
+.download-activity-page__empty {
+  padding: 28px 18px;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 10px;
+  color: var(--color-muted-foreground);
+  background: var(--color-surface);
+  font-size: 13px;
+  text-align: center;
 }
 
 .inspector-panel--model-search,

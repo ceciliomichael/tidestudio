@@ -1,7 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download } from "lucide-react";
-import { DownloadActivityPopover } from "../features/downloads/DownloadActivityPopover";
+import { DownloadActivityPage } from "../features/downloads/DownloadActivityPage";
 import { DownloadInspector } from "../features/downloads/DownloadInspector";
 import { DownloadsBrowser } from "../features/downloads/DownloadsBrowser";
 import type {
@@ -204,7 +203,6 @@ export function App() {
   const [downloadActivities, setDownloadActivities] = useState<
     DownloadActivity[]
   >([]);
-  const [downloadsOpen, setDownloadsOpen] = useState(false);
   const downloadSamplesRef = useRef<
     Record<
       string,
@@ -267,7 +265,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (activePage !== "downloads" || modelSearchPrimedRef.current) {
+    if (activePage !== "modelSearch" || modelSearchPrimedRef.current) {
       return;
     }
 
@@ -948,6 +946,8 @@ export function App() {
           activePage === "settings"
             ? "settings"
             : activePage === "downloads"
+            ? "downloadActivity"
+            : activePage === "modelSearch"
             ? selectedHuggingFaceRepoId
               ? "modelSearchDetail"
               : "modelSearchBrowse"
@@ -964,37 +964,7 @@ export function App() {
             <NavigationPanel
               activePage={activePage}
               onPageChange={setActivePage}
-              footer={
-                <div className="topbar-downloads">
-                  <button
-                    className="navigation-download-button"
-                    type="button"
-                    aria-expanded={downloadsOpen}
-                    onClick={() => setDownloadsOpen((current) => !current)}
-                  >
-                    <Download size={16} strokeWidth={1.9} aria-hidden="true" />
-                    <span>Downloads</span>
-                    {activeDownloadCount > 0 ? (
-                      <span className="navigation-download-badge">
-                        {activeDownloadCount}
-                      </span>
-                    ) : null}
-                  </button>
-
-                  <DownloadActivityPopover
-                    open={downloadsOpen}
-                    activities={downloadActivities}
-                    onClose={() => setDownloadsOpen(false)}
-                    onClearCompleted={() =>
-                      setDownloadActivities((current) =>
-                        current.filter(
-                          (activity) => activity.status !== "completed",
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              }
+              activeDownloadCount={activeDownloadCount}
             />
           )
         }
@@ -1003,7 +973,7 @@ export function App() {
             className={
               activePage === "settings"
                 ? "main-panel main-panel--settings"
-                : activePage === "downloads"
+                : activePage === "modelSearch"
                 ? "main-panel main-panel--downloads"
                 : "main-panel"
             }
@@ -1043,6 +1013,15 @@ export function App() {
                 onSelect={setCatalogSelectedId}
                 onDelete={handleDeleteCatalogModel}
               />
+            ) : activePage === "downloads" ? (
+              <DownloadActivityPage
+                activities={downloadActivities}
+                onClearCompleted={() =>
+                  setDownloadActivities((current) =>
+                    current.filter((activity) => activity.status !== "completed"),
+                  )
+                }
+              />
             ) : (
               <DownloadsBrowser
                 models={huggingFaceModels}
@@ -1058,10 +1037,10 @@ export function App() {
             )}
           </section>
         }
-        right={activePage === "settings" ? null : (
+        right={activePage === "settings" || activePage === "downloads" ? null : (
           <aside
             className={
-              activePage === "downloads"
+              activePage === "modelSearch"
                 ? "inspector-panel inspector-panel--model-search"
                 : "inspector-panel"
             }

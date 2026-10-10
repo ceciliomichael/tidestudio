@@ -78,12 +78,12 @@ The left panel is product navigation, not the model list itself. It provides sta
 - Server
 - Models
 - Model Search
-- Presets
+- Downloads
 - Settings
 
-Server, Models, and Model Search are implemented destinations. Future destinations may appear quietly as unavailable items without pretending the page exists.
+Server, Models, Model Search, and Downloads are implemented destinations. Settings is anchored to the bottom of the navigation sidebar without a divider above it; Presets is no longer shown.
 
-The sidebar follows compact TideCode-like spacing with restrained rounded navigation rows. The Downloads activity control belongs in the sidebar footer; do not show backend/runtime metadata there.
+The sidebar follows compact TideCode-like spacing with restrained rounded navigation rows. Downloads uses the same row styling and a live active-count badge. Settings is the only bottom navigation action, without a top border or divider; do not show backend/runtime metadata there.
 
 The active navigation item keeps the same selected color on hover. Hover feedback is only for inactive interactive items.
 
@@ -92,6 +92,8 @@ The active navigation item keeps the same selected color on hover. Hover feedbac
 The center panel is the primary working area and should receive the strongest visual emphasis.
 
 The center workspace is a full-height square-edged surface, not an inset rounded card. It runs flush from the top of the workspace to the bottom and is separated from the left navigation and right inspector by fine vertical boundaries. This keeps the working layout immediately familiar to users coming from LM Studio while retaining TideStudio's own visual system.
+
+The center and right workspace panels have a 1px muted top border in light and dark themes. The left navigation and dedicated Settings sidebar have no top border. The main panel still retains its top-left corner radius; there is no divider above the bottom Settings navigation button.
 
 The center host itself has no global content padding. Each page owns its spacing. Models uses a full-bleed catalog layout so the toolbar and table can span the complete center width, while Server applies its own readable content inset.
 
@@ -109,7 +111,7 @@ Within each Download Options group, use one dropdown to select a GGUF variant an
 
 The Model Search center page fills the complete center panel. Its search field and provider selector remain fixed in place; only the repository results list scrolls vertically. Do not add a separate provider/results heading below the search controls. Download progress does not belong in Model Search.
 
-Global download activity lives in a popover opened from the Downloads utility at the bottom of the sidebar. Active entries show downloaded size, total size, percentage, live transfer speed, and a progress bar. Completed downloads remain in the popover until cleared.
+Global download activity lives in its own Downloads page at the former Presets navigation position, not a popover. This uses a two-panel workspace without a right inspector, with a fixed Downloads header and a vertically scrollable body. Active cards show downloaded size, total size, percentage, live transfer speed, and a progress bar using the former activity-popover visual language. Completed downloads remain in the page until cleared; the main sidebar item shows a live active count. Model Search remains a separate page with its optional right repository inspector.
 
 Download progress UI should update at a readable cadence rather than repainting for every network chunk. Active rows use stable metric regions and tabular numbers so transfer speed and byte counts do not visually jump around. In Model Search, an active file's Download button shows its percentage instead of a generic Downloading label.
 

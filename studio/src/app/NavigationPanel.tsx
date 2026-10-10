@@ -1,18 +1,17 @@
 import {
+  Download,
   LibraryBig,
   Search,
   Server,
   Settings,
-  SlidersHorizontal,
 } from "lucide-react";
-import type { ReactNode } from "react";
 
-export type ActivePage = "server" | "models" | "downloads" | "settings";
+export type ActivePage = "server" | "models" | "modelSearch" | "downloads" | "settings";
 
 type Props = {
   activePage: ActivePage;
   onPageChange: (page: ActivePage) => void;
-  footer?: ReactNode;
+  activeDownloadCount: number;
 };
 
 const items = [
@@ -20,35 +19,25 @@ const items = [
     id: "server" as const,
     label: "Server",
     icon: Server,
-    available: true,
   },
   {
     id: "models" as const,
     label: "Models",
     icon: LibraryBig,
-    available: true,
+  },
+  {
+    id: "modelSearch" as const,
+    label: "Model Search",
+    icon: Search,
   },
   {
     id: "downloads" as const,
-    label: "Model Search",
-    icon: Search,
-    available: true,
-  },
-  {
-    id: null,
-    label: "Presets",
-    icon: SlidersHorizontal,
-    available: false,
-  },
-  {
-    id: "settings" as const,
-    label: "Settings",
-    icon: Settings,
-    available: true,
+    label: "Downloads",
+    icon: Download,
   },
 ];
 
-export function NavigationPanel({ activePage, onPageChange, footer }: Props) {
+export function NavigationPanel({ activePage, onPageChange, activeDownloadCount }: Props) {
   return (
     <nav className="navigation-panel" aria-label="TideStudio navigation">
       <div className="navigation-section">
@@ -64,18 +53,13 @@ export function NavigationPanel({ activePage, onPageChange, footer }: Props) {
                 className={isActive ? "navigation-item is-active" : "navigation-item"}
                 type="button"
                 key={item.label}
-                disabled={!item.available}
                 aria-current={isActive ? "page" : undefined}
-                onClick={() => {
-                  if (item.id) {
-                    onPageChange(item.id);
-                  }
-                }}
+                onClick={() => onPageChange(item.id)}
               >
                 <Icon size={17} strokeWidth={2} aria-hidden="true" />
                 <span className="navigation-item__label">{item.label}</span>
-                {!item.available ? (
-                  <span className="navigation-item__meta">Soon</span>
+                {item.id === "downloads" && activeDownloadCount > 0 ? (
+                  <span className="navigation-download-badge">{activeDownloadCount}</span>
                 ) : null}
               </button>
             );
@@ -83,7 +67,14 @@ export function NavigationPanel({ activePage, onPageChange, footer }: Props) {
         </div>
       </div>
       <div className="navigation-spacer" />
-      {footer ? <div className="navigation-footer">{footer}</div> : null}
+      <button
+        className="navigation-item navigation-settings-button"
+        type="button"
+        onClick={() => onPageChange("settings")}
+      >
+        <Settings size={17} strokeWidth={2} aria-hidden="true" />
+        <span className="navigation-item__label">Settings</span>
+      </button>
     </nav>
   );
 }

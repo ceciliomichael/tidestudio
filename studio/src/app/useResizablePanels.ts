@@ -19,6 +19,7 @@ const HANDLE_LAYOUT_WIDTH = 0;
 export type WorkspaceLayoutMode =
   | "standard"
   | "settings"
+  | "downloadActivity"
   | "modelSearchBrowse"
   | "modelSearchDetail";
 
@@ -40,7 +41,7 @@ function clamp(value: number, minimum: number, maximum: number) {
 }
 
 function limitsFor(mode: WorkspaceLayoutMode): LayoutLimits {
-  if (mode === "modelSearchBrowse" || mode === "settings") {
+  if (mode === "modelSearchBrowse" || mode === "settings" || mode === "downloadActivity") {
     return {
       minRight: 0,
       maxRight: 0,
@@ -70,7 +71,7 @@ function initialWidths(
   const left = clamp(220, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
   const limits = limitsFor(mode);
 
-  if (mode === "modelSearchBrowse" || mode === "settings") {
+  if (mode === "modelSearchBrowse" || mode === "settings" || mode === "downloadActivity") {
     return { left, right: 0 };
   }
 
@@ -105,7 +106,7 @@ function fitToContainer(
   const limits = limitsFor(mode);
   let left = clamp(widths.left, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
 
-  if (mode === "modelSearchBrowse" || mode === "settings") {
+  if (mode === "modelSearchBrowse" || mode === "settings" || mode === "downloadActivity") {
     return {
       left: Math.min(left, Math.max(MIN_LEFT_WIDTH, containerWidth - limits.minMain)),
       right: 0,
