@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "studio.tide.local",
   "build": {
-    "beforeDevCommand": "npm run build:api-gateway && npm run dev",
+    "beforeDevCommand": "npm run prepare:llama && npm run build:api-gateway && npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run prepare:llama && npm run build",
     "frontendDist": "../dist"
   },
   "app": {

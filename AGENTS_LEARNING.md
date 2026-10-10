@@ -58,5 +58,6 @@
 - Default model reasoning budget is 1024 unless a saved per-model value overrides it.
 - Loaded-model cards expose a compact copy action for the exact public API model ID; successful copy actions should switch to a checkmark briefly, including the public API endpoint copy control.
 - Keep llama.cpp's Web UI disabled for managed workers with `--no-webui`.
+- Do not commit downloaded GGUF model weights or the generated llama.cpp runtime. Root Git ignore rules keep `models/` and `studio/runtime/llama.cpp/` local; `npm run prepare:llama` restores the pinned upstream `b11429` Windows x64 CUDA runtime for fresh clones.
 - Show detected quantization in loaded-model cards when known.
 - Render repository README/model-card Markdown properly in the Model Search right inspector for both Hugging Face and ModelScope.
