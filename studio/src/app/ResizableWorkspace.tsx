@@ -3,12 +3,15 @@ import {
   useResizablePanels,
   type WorkspaceLayoutMode,
 } from "./useResizablePanels";
+import type { WorkspacePanelPreferences } from "./workspacePanelPreferences";
 
 type Props = {
   left: ReactNode;
   main: ReactNode;
   right: ReactNode;
   layoutMode?: WorkspaceLayoutMode;
+  initialPanelPreferences: WorkspacePanelPreferences;
+  onPanelPreferencesChange: (preferences: WorkspacePanelPreferences) => void;
 };
 
 export function ResizableWorkspace({
@@ -16,6 +19,8 @@ export function ResizableWorkspace({
   main,
   right,
   layoutMode = "standard",
+  initialPanelPreferences,
+  onPanelPreferencesChange,
 }: Props) {
   const {
     containerRef,
@@ -23,21 +28,15 @@ export function ResizableWorkspace({
     rightWidth,
     beginLeftResize,
     beginRightResize,
-  } = useResizablePanels(layoutMode);
+  } = useResizablePanels(
+    layoutMode,
+    initialPanelPreferences,
+    onPanelPreferencesChange,
+  );
 
   const noRightPanel = layoutMode === "modelSearchBrowse" || layoutMode === "settings" || layoutMode === "downloadActivity";
-  const fallback =
-    noRightPanel
-      ? "220px 0 minmax(0, 1fr) 0 0"
-      : layoutMode === "modelSearchDetail"
-        ? "220px 0 minmax(360px, 42%) 0 minmax(480px, 58%)"
-        : "220px 0 minmax(0, 1fr) 0 320px";
-
   const style: CSSProperties = {
-    gridTemplateColumns:
-      leftWidth === null || rightWidth === null
-        ? fallback
-        : `${leftWidth}px 0 minmax(0, 1fr) 0 ${rightWidth}px`,
+    gridTemplateColumns: `${leftWidth}px 0 minmax(0, 1fr) 0 ${rightWidth}px`,
   };
 
   return (

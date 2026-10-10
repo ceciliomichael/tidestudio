@@ -5,6 +5,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import type { WorkspacePanelPreferences } from "./workspacePanelPreferences";
 
 const MIN_LEFT_WIDTH = 196;
 const MAX_LEFT_WIDTH = 280;
@@ -67,8 +68,9 @@ function limitsFor(mode: WorkspaceLayoutMode): LayoutLimits {
 function initialWidths(
   containerWidth: number,
   mode: WorkspaceLayoutMode,
+  preferences?: WorkspacePanelPreferences,
 ): PanelWidths {
-  const left = clamp(220, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
+  const left = clamp(preferences?.left ?? 220, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
   const limits = limitsFor(mode);
 
   if (mode === "modelSearchBrowse" || mode === "settings" || mode === "downloadActivity") {
@@ -81,7 +83,7 @@ function initialWidths(
     return {
       left,
       right: clamp(
-        availableAfterNavigation * 0.58,
+        preferences?.detailRight ?? availableAfterNavigation * 0.58,
         limits.minRight,
         limits.maxRight,
       ),
@@ -91,7 +93,7 @@ function initialWidths(
   return {
     left,
     right: clamp(
-      containerWidth * 0.2,
+      preferences?.standardRight ?? containerWidth * 0.2,
       limits.minRight,
       limits.maxRight,
     ),
@@ -146,10 +148,35 @@ function fitToContainer(
 }
 
 export function useResizablePanels(
-  mode: WorkspaceLayoutMode = "standard",
+  mode: WorkspaceLayoutMode,
+  initialPreferences: WorkspacePanelPreferences,
+  onCommit: (preferences: WorkspacePanelPreferences) => void,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [widths, setWidths] = useState<PanelWidths | null>(null);
+  const preferencesRef = useRef<WorkspacePanelPreferences>({
+    ...initialPreferences,
+  });
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+  const [widths, setWidths] = useState<PanelWidths>(() => ({
+    left: clamp(initialPreferences.left, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH),
+    right:
+      mode === "modelSearchBrowse" ||
+      mode === "settings" ||
+      mode === "downloadActivity"
+        ? 0
+        : mode === "modelSearchDetail"
+          ? clamp(
+              initialPreferences.detailRight,
+              DETAIL_MIN_RIGHT_WIDTH,
+              DETAIL_MAX_RIGHT_WIDTH,
+            )
+          : clamp(
+              initialPreferences.standardRight,
+              STANDARD_MIN_RIGHT_WIDTH,
+              STANDARD_MAX_RIGHT_WIDTH,
+            ),
+  }));
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -159,14 +186,13 @@ export function useResizablePanels(
     }
 
     const containerWidth = container.getBoundingClientRect().width;
-    setWidths((current) => {
-      const initial = initialWidths(containerWidth, mode);
-      return fitToContainer(
-        { left: current?.left ?? initial.left, right: initial.right },
+    setWidths(
+      fitToContainer(
+        initialWidths(containerWidth, mode, preferencesRef.current),
         containerWidth,
         mode,
-      );
-    });
+      ),
+    );
 
     const observer = new ResizeObserver(() => {
       const nextContainerWidth =
@@ -174,7 +200,7 @@ export function useResizablePanels(
 
       setWidths((current) =>
         fitToContainer(
-          current ?? initialWidths(nextContainerWidth, mode),
+          current,
           nextContainerWidth,
           mode,
         ),
@@ -206,7 +232,7 @@ export function useResizablePanels(
         ),
       );
       const startWidths = fitToContainer(
-        widths ?? initialWidths(containerWidth, mode),
+        widths,
         containerWidth,
         mode,
       );
@@ -226,14 +252,16 @@ export function useResizablePanels(
               HANDLE_LAYOUT_WIDTH * 2,
           );
 
-          setWidths({
+          const next = {
             left: clamp(
               startWidths.left + delta,
               MIN_LEFT_WIDTH,
               Math.max(MIN_LEFT_WIDTH, maximum),
             ),
             right: startWidths.right,
-          });
+          };
+          preferencesRef.current.left = next.left;
+          setWidths(next);
           return;
         }
 
@@ -245,14 +273,20 @@ export function useResizablePanels(
             HANDLE_LAYOUT_WIDTH * 2,
         );
 
-        setWidths({
+        const next = {
           left: startWidths.left,
           right: clamp(
             startWidths.right - delta,
             effectiveMinRight,
             Math.max(effectiveMinRight, maximum),
           ),
-        });
+        };
+        if (mode === "modelSearchDetail") {
+          preferencesRef.current.detailRight = next.right;
+        } else {
+          preferencesRef.current.standardRight = next.right;
+        }
+        setWidths(next);
       }
 
       function finish() {
@@ -260,6 +294,7 @@ export function useResizablePanels(
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", finish);
         window.removeEventListener("pointercancel", finish);
+        commitRef.current({ ...preferencesRef.current });
       }
 
       window.addEventListener("pointermove", move);
@@ -271,8 +306,8 @@ export function useResizablePanels(
 
   return {
     containerRef,
-    leftWidth: widths?.left ?? null,
-    rightWidth: widths?.right ?? null,
+    leftWidth: widths.left,
+    rightWidth: widths.right,
     beginLeftResize: (event: ReactPointerEvent<HTMLDivElement>) =>
       beginResize("left", event),
     beginRightResize: (event: ReactPointerEvent<HTMLDivElement>) =>

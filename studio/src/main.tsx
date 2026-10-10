@@ -3,6 +3,11 @@ import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import {
+  parseWorkspacePanelPreferences,
+  WORKSPACE_PANEL_WIDTHS_PREFERENCE_KEY,
+} from "./app/workspacePanelPreferences";
+import { getUiPreference } from "./lib/tauri";
 import "./styles/global.css";
 
 const PREFERRED_MIN_WINDOW_WIDTH = 1100;
@@ -36,8 +41,20 @@ document.addEventListener("contextmenu", (event) => {
 
 void syncMinimumWindowSize().catch(() => undefined);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+async function mountApp() {
+  let rawPanelWidths: string | null = null;
+  try {
+    rawPanelWidths = await getUiPreference(WORKSPACE_PANEL_WIDTHS_PREFERENCE_KEY);
+  } catch {
+    // Browser-only development does not provide the Tauri preference store.
+  }
+
+  const initialPanelPreferences = parseWorkspacePanelPreferences(rawPanelWidths);
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App initialPanelPreferences={initialPanelPreferences} />
+    </StrictMode>,
+  );
+}
+
+void mountApp();

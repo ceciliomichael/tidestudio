@@ -66,6 +66,10 @@ import { SettingsSidebar, type SettingsSectionId } from "../features/settings/Se
 import { GeneralSettings } from "../features/settings/GeneralSettings";
 import { UpdatesSettings } from "../features/settings/UpdatesSettings";
 import { useAppearancePreferences } from "../lib/appearance";
+import {
+  type WorkspacePanelPreferences,
+  WORKSPACE_PANEL_WIDTHS_PREFERENCE_KEY,
+} from "./workspacePanelPreferences";
 
 function formatModelSize(sizeBytes: number) {
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -169,7 +173,11 @@ function runtimeCatalogModel(server: ServerStatus): CatalogModel {
   };
 }
 
-export function App() {
+type AppProps = {
+  initialPanelPreferences: WorkspacePanelPreferences;
+};
+
+export function App({ initialPanelPreferences }: AppProps) {
   const [activePage, setActivePage] = useState<ActivePage>("server");
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const { appearance, language, changeAppearance, changeLanguage } = useAppearancePreferences();
@@ -937,11 +945,22 @@ export function App() {
     (activity) => activity.status === "downloading",
   ).length;
 
+  function handlePanelPreferencesChange(
+    preferences: WorkspacePanelPreferences,
+  ) {
+    void setUiPreference(
+      WORKSPACE_PANEL_WIDTHS_PREFERENCE_KEY,
+      JSON.stringify(preferences),
+    ).catch(console.error);
+  }
+
   return (
     <main className="app-shell">
       {error ? <div className="error-banner">{error}</div> : null}
 
       <ResizableWorkspace
+        initialPanelPreferences={initialPanelPreferences}
+        onPanelPreferencesChange={handlePanelPreferencesChange}
         layoutMode={
           activePage === "settings"
             ? "settings"

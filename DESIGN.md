@@ -69,7 +69,7 @@ Create interfaces that feel calm, precise, and quietly polished. Favor clarity o
 
 ## Desktop workspace
 
-TideStudio uses a persistent desktop structure with a compact navigation rail, one continuous working surface, and a contextual right inspector when appropriate. The navigation defaults to roughly 220px and remains resizable.
+TideStudio uses a persistent desktop structure with a compact navigation rail, one continuous working surface, and a contextual right inspector when appropriate. The navigation defaults to roughly 220px and remains resizable. User-resized panel widths persist in SQLite: one shared left width, one standard right-inspector width, and one Model Search detail width. Hydrate these preferences before the first React workspace render so startup never visibly jumps from default widths to saved widths. Persist a new value when a resize gesture finishes, not for every pointer movement or temporary viewport clamp.
 
 ### Left panel
 

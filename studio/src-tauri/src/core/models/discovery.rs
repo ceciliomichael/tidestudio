@@ -1,4 +1,5 @@
 use super::{CapabilityHints, ModelInfo, inspect_gguf};
+use crate::core::paths;
 use std::{
     collections::HashSet,
     fs,
@@ -32,22 +33,7 @@ pub fn discover_models() -> Result<Vec<ModelInfo>, String> {
 }
 
 pub(crate) fn resolve_models_dir() -> Result<PathBuf, String> {
-    let current_dir = std::env::current_dir()
-        .map_err(|error| format!("failed to resolve current directory: {error}"))?;
-
-    let candidates = [
-        current_dir.join("models"),
-        current_dir.join("..").join("models"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("models"),
-    ];
-
-    candidates
-        .into_iter()
-        .find(|candidate| candidate.is_dir())
-        .ok_or_else(|| "could not find the TideStudio models directory".to_string())
+    paths::resolve_models_dir()
 }
 
 fn scan_directory(

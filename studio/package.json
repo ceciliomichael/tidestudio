@@ -8,6 +8,8 @@
     "build": "npm run build:api-gateway && tsc --noEmit && vite build",
     "build:api-gateway": "node scripts/build-api-gateway.mjs",
     "prepare:llama": "node scripts/prepare-llama-runtime.mjs",
+    "stage:release-runtime": "node scripts/stage-release-runtime.mjs",
+    "release:windows": "tauri build --bundles nsis",
     "tauri": "tauri"
   },
   "dependencies": {

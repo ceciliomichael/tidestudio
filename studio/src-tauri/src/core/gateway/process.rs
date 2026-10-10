@@ -1,28 +1,14 @@
 use super::GatewayConfig;
-use std::{
-    path::PathBuf,
-    process::{Child, Command, Stdio},
-};
+use crate::core::paths::resolve_runtime_binary;
+use std::process::{Child, Command, Stdio};
 
-fn resolve_gateway() -> Result<PathBuf, String> {
+fn resolve_gateway() -> Result<std::path::PathBuf, String> {
     let executable = if cfg!(windows) {
         "tidestudio-api-gateway.exe"
     } else {
         "tidestudio-api-gateway"
     };
-    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
-    let candidates = [
-        cwd.join("runtime/api-gateway").join(executable),
-        cwd.join("studio/runtime/api-gateway").join(executable),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../runtime/api-gateway")
-            .join(executable),
-    ];
-
-    candidates
-        .into_iter()
-        .find(|path| path.is_file())
-        .ok_or_else(|| "API gateway binary missing: run npm run build:api-gateway".to_string())
+    resolve_runtime_binary("api-gateway", executable)
 }
 
 pub(super) fn spawn_gateway(config: &GatewayConfig, token: &str) -> Result<Child, String> {
