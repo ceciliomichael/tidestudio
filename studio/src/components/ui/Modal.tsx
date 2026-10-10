@@ -9,6 +9,9 @@ type Props = {
   title: string;
   open: boolean;
   children: ReactNode;
+  headerContent?: ReactNode;
+  hideHeader?: boolean;
+  hideCloseButton?: boolean;
   onClose: () => void;
   className?: string;
   overlayClassName?: string;
@@ -18,6 +21,9 @@ export function Modal({
   title,
   open,
   children,
+  headerContent,
+  hideHeader = false,
+  hideCloseButton = false,
   onClose,
   className = "",
   overlayClassName = "",
@@ -57,16 +63,20 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
       >
-        <header className="ui-modal__header">
-          <strong>{title}</strong>
-          <IconButton
-            className="ui-modal__close"
-            icon={X}
-            label="Close"
-            size={16}
-            onClick={onClose}
-          />
-        </header>
+        {!hideHeader ? (
+          <header className="ui-modal__header">
+            {headerContent ?? <strong>{title}</strong>}
+            {!hideCloseButton ? (
+              <IconButton
+                className="ui-modal__close"
+                icon={X}
+                label="Close"
+                size={16}
+                onClick={onClose}
+              />
+            ) : null}
+          </header>
+        ) : null}
         {children}
       </section>
     </div>

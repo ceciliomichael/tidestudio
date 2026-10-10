@@ -224,6 +224,44 @@ export function ModelLibrary({
 }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<CatalogModel | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const dataBodyRef = useRef<HTMLDivElement>(null);
+  const actionsBodyRef = useRef<HTMLDivElement>(null);
+  const horizontalScrollRef = useRef<HTMLDivElement>(null);
+
+  function handleDataScroll() {
+    const dataBody = dataBodyRef.current;
+    if (!dataBody) return;
+    if (
+      actionsBodyRef.current &&
+      actionsBodyRef.current.scrollTop !== dataBody.scrollTop
+    ) {
+      actionsBodyRef.current.scrollTop = dataBody.scrollTop;
+    }
+  }
+
+  function handleActionsScroll() {
+    const actionsBody = actionsBodyRef.current;
+    if (
+      actionsBody &&
+      dataBodyRef.current &&
+      dataBodyRef.current.scrollTop !== actionsBody.scrollTop
+    ) {
+      dataBodyRef.current.scrollTop = actionsBody.scrollTop;
+    }
+  }
+
+  function handleHorizontalScroll() {
+    const horizontalScroll = horizontalScrollRef.current;
+    const layout = layoutRef.current;
+    if (!horizontalScroll || !layout) return;
+
+    layout.style.setProperty(
+      "--model-catalog-scroll-x",
+      `${-horizontalScroll.scrollLeft}px`,
+    );
+  }
 
   async function confirmDelete() {
     if (!deleteTarget || deleting) return;
@@ -248,65 +286,111 @@ export function ModelLibrary({
       </header>
 
       <div className="model-catalog__table">
-        <div className="model-catalog__header">
-          <span>Model</span>
-          <span>Publisher</span>
-          <span>Type</span>
-          <span>Params</span>
-          <span>Quant</span>
-          <span>Context Length</span>
-          <span>Size</span>
-          <span className="model-catalog__actions-heading">Actions</span>
-        </div>
-
-        <div className="model-catalog__body">
-          {models.length === 0 ? (
-            <div className="model-catalog__empty">
-              No GGUF models found in TideStudio&apos;s models directory.
+        <div className="model-catalog__layout" ref={layoutRef}>
+          <div className="model-catalog__data-column">
+            <div className="model-catalog__header-scroll">
+              <div className="model-catalog__header">
+                <span>Model</span>
+                <span>Publisher</span>
+                <span>Type</span>
+                <span>Params</span>
+                <span>Quant</span>
+                <span>Context Length</span>
+                <span>Size</span>
+              </div>
             </div>
-          ) : null}
 
-          {models.map((model) => (
-              <div
-                className={
-                  model.id === selectedId
-                    ? "model-catalog-row is-selected"
-                    : "model-catalog-row"
-                }
-                key={model.id}
-                role="row"
-                tabIndex={0}
-                onClick={() => onSelect(model.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onSelect(model.id);
+            <div
+              className="model-catalog__body"
+              ref={dataBodyRef}
+              onScroll={handleDataScroll}
+            >
+              <div className="model-catalog__body-content">
+                {models.length === 0 ? (
+                  <div className="model-catalog__empty">
+                    No GGUF models found in TideStudio&apos;s models directory.
+                  </div>
+                ) : null}
+
+                {models.map((model) => (
+                  <div
+                    className={
+                      model.id === selectedId
+                        ? "model-catalog-row is-selected"
+                        : model.id === hoveredId
+                          ? "model-catalog-row is-hovered"
+                          : "model-catalog-row"
+                    }
+                    key={model.id}
+                    role="row"
+                    tabIndex={0}
+                    onPointerEnter={() => setHoveredId(model.id)}
+                    onPointerLeave={() => setHoveredId(null)}
+                    onClick={() => onSelect(model.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelect(model.id);
+                      }
+                    }}
+                  >
+                    <span className="model-catalog-row__model">
+                      <strong title={model.name}>{model.name}</strong>
+                    </span>
+
+                    <span title={model.publisher}>{model.publisher}</span>
+
+                    <span>
+                      <span className="model-tag">{model.category}</span>
+                    </span>
+
+                    <span>{model.parameters}</span>
+                    <span>{model.quantization}</span>
+                    <span>{model.contextLength}</span>
+                    <span>{model.size}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="model-catalog__actions-column">
+            <div className="model-catalog__actions-heading">Actions</div>
+            <div
+              className="model-catalog__actions-body"
+              ref={actionsBodyRef}
+              onScroll={handleActionsScroll}
+            >
+              {models.map((model) => (
+                <div
+                  className={
+                    model.id === selectedId
+                      ? "model-catalog-row__actions is-selected"
+                      : model.id === hoveredId
+                        ? "model-catalog-row__actions is-hovered"
+                        : "model-catalog-row__actions"
                   }
-                }}
-              >
-                <span className="model-catalog-row__model">
-                  <strong title={model.name}>{model.name}</strong>
-                </span>
-
-                <span title={model.publisher}>{model.publisher}</span>
-
-                <span>
-                  <span className="model-tag">{model.category}</span>
-                </span>
-
-                <span>{model.parameters}</span>
-                <span>{model.quantization}</span>
-                <span>{model.contextLength}</span>
-                <span>{model.size}</span>
-
-                <div className="model-catalog-row__actions">
+                  key={model.id}
+                  onPointerEnter={() => setHoveredId(model.id)}
+                  onPointerLeave={() => setHoveredId(null)}
+                  onClick={() => onSelect(model.id)}
+                >
                   <ModelActionsMenu
                     model={model}
                     onRequestDelete={() => setDeleteTarget(model)}
                   />
                 </div>
-              </div>
-          ))}
+              ))}
+            </div>
+          </div>
+
+          <div
+            className="model-catalog__horizontal-scroll"
+            ref={horizontalScrollRef}
+            onScroll={handleHorizontalScroll}
+          >
+            <div className="model-catalog__horizontal-track" />
+          </div>
         </div>
       </div>
 

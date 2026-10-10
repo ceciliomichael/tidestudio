@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type ActivePage = "server" | "models" | "downloads";
+export type ActivePage = "server" | "models" | "downloads" | "settings";
 
 type Props = {
   activePage: ActivePage;
@@ -41,10 +41,10 @@ const items = [
     available: false,
   },
   {
-    id: null,
+    id: "settings" as const,
     label: "Settings",
     icon: Settings,
-    available: false,
+    available: true,
   },
 ];
 

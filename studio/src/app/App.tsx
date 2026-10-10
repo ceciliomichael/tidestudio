@@ -63,6 +63,10 @@ import {
   type ActivePage,
 } from "./NavigationPanel";
 import { ResizableWorkspace } from "./ResizableWorkspace";
+import { SettingsSidebar, type SettingsSectionId } from "../features/settings/SettingsSidebar";
+import { GeneralSettings } from "../features/settings/GeneralSettings";
+import { UpdatesSettings } from "../features/settings/UpdatesSettings";
+import { useAppearancePreferences } from "../lib/appearance";
 
 function formatModelSize(sizeBytes: number) {
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -82,7 +86,7 @@ function formatModified(modifiedMs: number | null) {
     return "Unknown";
   }
 
-  return new Date(modifiedMs).toLocaleDateString();
+  return new Date(modifiedMs).toLocaleDateString(document.documentElement.lang || "en-US");
 }
 
 function formatContextLength(contextLength: number | null) {
@@ -168,6 +172,8 @@ function runtimeCatalogModel(server: ServerStatus): CatalogModel {
 
 export function App() {
   const [activePage, setActivePage] = useState<ActivePage>("server");
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
+  const { appearance, language, changeAppearance, changeLanguage } = useAppearancePreferences();
   const [localModels, setLocalModels] = useState<CatalogModel[]>([]);
   const [catalogSelectedId, setCatalogSelectedId] = useState("");
   const [catalogConfigs, setCatalogConfigs] = useState<
@@ -939,58 +945,83 @@ export function App() {
 
       <ResizableWorkspace
         layoutMode={
-          activePage === "downloads"
+          activePage === "settings"
+            ? "settings"
+            : activePage === "downloads"
             ? selectedHuggingFaceRepoId
               ? "modelSearchDetail"
               : "modelSearchBrowse"
             : "standard"
         }
         left={
-          <NavigationPanel
-            activePage={activePage}
-            onPageChange={setActivePage}
-            footer={
-              <div className="topbar-downloads">
-                <button
-                  className="navigation-download-button"
-                  type="button"
-                  aria-expanded={downloadsOpen}
-                  onClick={() => setDownloadsOpen((current) => !current)}
-                >
-                  <Download size={16} strokeWidth={1.9} aria-hidden="true" />
-                  <span>Downloads</span>
-                  {activeDownloadCount > 0 ? (
-                    <span className="navigation-download-badge">
-                      {activeDownloadCount}
-                    </span>
-                  ) : null}
-                </button>
+          activePage === "settings" ? (
+            <SettingsSidebar
+              selected={settingsSection}
+              onSelect={setSettingsSection}
+              onBack={() => setActivePage("server")}
+            />
+          ) : (
+            <NavigationPanel
+              activePage={activePage}
+              onPageChange={setActivePage}
+              footer={
+                <div className="topbar-downloads">
+                  <button
+                    className="navigation-download-button"
+                    type="button"
+                    aria-expanded={downloadsOpen}
+                    onClick={() => setDownloadsOpen((current) => !current)}
+                  >
+                    <Download size={16} strokeWidth={1.9} aria-hidden="true" />
+                    <span>Downloads</span>
+                    {activeDownloadCount > 0 ? (
+                      <span className="navigation-download-badge">
+                        {activeDownloadCount}
+                      </span>
+                    ) : null}
+                  </button>
 
-                <DownloadActivityPopover
-                  open={downloadsOpen}
-                  activities={downloadActivities}
-                  onClose={() => setDownloadsOpen(false)}
-                  onClearCompleted={() =>
-                    setDownloadActivities((current) =>
-                      current.filter(
-                        (activity) => activity.status !== "completed",
-                      ),
-                    )
-                  }
-                />
-              </div>
-            }
-          />
+                  <DownloadActivityPopover
+                    open={downloadsOpen}
+                    activities={downloadActivities}
+                    onClose={() => setDownloadsOpen(false)}
+                    onClearCompleted={() =>
+                      setDownloadActivities((current) =>
+                        current.filter(
+                          (activity) => activity.status !== "completed",
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              }
+            />
+          )
         }
         main={
           <section
             className={
-              activePage === "downloads"
+              activePage === "settings"
+                ? "main-panel main-panel--settings"
+                : activePage === "downloads"
                 ? "main-panel main-panel--downloads"
                 : "main-panel"
             }
           >
-            {activePage === "server" ? (
+            {activePage === "settings" ? (
+              <div className="settings-workspace__main">
+                {settingsSection === "general" ? (
+                  <GeneralSettings
+                    appearance={appearance}
+                    language={language}
+                    onAppearanceChange={changeAppearance}
+                    onLanguageChange={changeLanguage}
+                  />
+                ) : (
+                  <UpdatesSettings />
+                )}
+              </div>
+            ) : activePage === "server" ? (
               <ServerDashboard
                 servers={servers}
                 pendingModelPaths={pendingModelPaths}
@@ -1027,7 +1058,7 @@ export function App() {
             )}
           </section>
         }
-        right={
+        right={activePage === "settings" ? null : (
           <aside
             className={
               activePage === "downloads"
@@ -1065,7 +1096,7 @@ export function App() {
               />
             )}
           </aside>
-        }
+        )}
       />
     </main>
   );

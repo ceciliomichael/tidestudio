@@ -1,6 +1,7 @@
 import { ChevronRight, Search, Square, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../components/ui/Button";
+import { IconButton } from "../../components/ui/IconButton";
 import { Modal } from "../../components/ui/Modal";
 import { SegmentedField } from "../../components/ui/SegmentedField";
 import type { CatalogModel } from "../models/types";
@@ -83,35 +84,38 @@ export function LoadModelDialog({
       onClose={onClose}
       className="load-model-dialog"
       overlayClassName="load-model-dialog-overlay"
+      hideCloseButton
+      headerContent={
+        <div className="load-model-dialog__search">
+          <Search size={14} strokeWidth={1.8} aria-hidden="true" />
+          <input
+            type="text"
+            aria-label="Filter models"
+            value={query}
+            placeholder="Type to filter models..."
+            autoFocus
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <IconButton
+            className="ui-modal__close"
+            icon={X}
+            label={query ? "Clear model filter" : "Close"}
+            size={16}
+            onClick={() => {
+              if (query) {
+                setQuery("");
+              } else {
+                onClose();
+              }
+            }}
+          />
+        </div>
+      }
     >
-      <div className="load-model-dialog__search">
-        <Search size={14} strokeWidth={1.8} aria-hidden="true" />
-        <input
-          type="text"
-          value={query}
-          placeholder="Type to filter models..."
-          autoFocus
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {query ? (
-          <button
-            className="load-model-dialog__search-clear"
-            type="button"
-            aria-label="Clear model filter"
-            onClick={() => setQuery("")}
-          >
-            <X size={15} strokeWidth={1.8} aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-
       <div className="load-model-dialog__body">
         <section className="load-model-dialog__section">
           <div className="load-model-dialog__section-heading">
-            <div>
-              <h3>Your Models</h3>
-              <span>{filteredModels.length}</span>
-            </div>
+            <h3>Your Models</h3>
             <SegmentedField
               ariaLabel="Sort models"
               className="load-model-dialog__sort"

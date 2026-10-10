@@ -40,6 +40,7 @@ pub fn run() {
             commands::models::delete_model,
             commands::preferences::get_ui_preference,
             commands::preferences::set_ui_preference,
+            commands::window::set_native_caption_color,
             commands::server::start_server,
             commands::server::stop_server,
             commands::server::update_server_inference,

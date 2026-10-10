@@ -35,9 +35,6 @@ document.addEventListener("contextmenu", (event) => {
 });
 
 void syncMinimumWindowSize().catch(() => undefined);
-void getCurrentWindow().onMoved(() => {
-  void syncMinimumWindowSize().catch(() => undefined);
-});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

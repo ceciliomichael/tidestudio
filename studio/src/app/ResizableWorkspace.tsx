@@ -25,8 +25,9 @@ export function ResizableWorkspace({
     beginRightResize,
   } = useResizablePanels(layoutMode);
 
+  const noRightPanel = layoutMode === "modelSearchBrowse" || layoutMode === "settings";
   const fallback =
-    layoutMode === "modelSearchBrowse"
+    noRightPanel
       ? "220px 0 minmax(0, 1fr) 0 0"
       : layoutMode === "modelSearchDetail"
         ? "220px 0 minmax(360px, 42%) 0 minmax(480px, 58%)"
@@ -61,7 +62,7 @@ export function ResizableWorkspace({
         onPointerDown={beginLeftResize}
       />
       {main}
-      {layoutMode === "modelSearchBrowse" ? null : (
+        {noRightPanel ? null : (
         <div
           className="panel-resizer"
           role="separator"

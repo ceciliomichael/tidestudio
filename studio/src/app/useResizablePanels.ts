@@ -18,6 +18,7 @@ const HANDLE_LAYOUT_WIDTH = 0;
 
 export type WorkspaceLayoutMode =
   | "standard"
+  | "settings"
   | "modelSearchBrowse"
   | "modelSearchDetail";
 
@@ -39,7 +40,7 @@ function clamp(value: number, minimum: number, maximum: number) {
 }
 
 function limitsFor(mode: WorkspaceLayoutMode): LayoutLimits {
-  if (mode === "modelSearchBrowse") {
+  if (mode === "modelSearchBrowse" || mode === "settings") {
     return {
       minRight: 0,
       maxRight: 0,
@@ -69,7 +70,7 @@ function initialWidths(
   const left = clamp(220, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
   const limits = limitsFor(mode);
 
-  if (mode === "modelSearchBrowse") {
+  if (mode === "modelSearchBrowse" || mode === "settings") {
     return { left, right: 0 };
   }
 
@@ -104,8 +105,11 @@ function fitToContainer(
   const limits = limitsFor(mode);
   let left = clamp(widths.left, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
 
-  if (mode === "modelSearchBrowse") {
-    return { left, right: 0 };
+  if (mode === "modelSearchBrowse" || mode === "settings") {
+    return {
+      left: Math.min(left, Math.max(MIN_LEFT_WIDTH, containerWidth - limits.minMain)),
+      right: 0,
+    };
   }
 
   const effectiveMinRight = Math.min(
@@ -154,13 +158,14 @@ export function useResizablePanels(
     }
 
     const containerWidth = container.getBoundingClientRect().width;
-    setWidths(
-      fitToContainer(
-        initialWidths(containerWidth, mode),
+    setWidths((current) => {
+      const initial = initialWidths(containerWidth, mode);
+      return fitToContainer(
+        { left: current?.left ?? initial.left, right: initial.right },
         containerWidth,
         mode,
-      ),
-    );
+      );
+    });
 
     const observer = new ResizeObserver(() => {
       const nextContainerWidth =

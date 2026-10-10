@@ -65,6 +65,7 @@ export function ServerSettingsDialog({
       open={open}
       onClose={onClose}
       className="server-settings-dialog"
+      hideHeader
     >
       <div className="server-settings-dialog__body">
         <section className="server-settings-dialog__section">

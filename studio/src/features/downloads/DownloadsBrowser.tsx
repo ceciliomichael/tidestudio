@@ -74,8 +74,7 @@ function modelBadges(model: HuggingFaceModelSummary) {
       }
       seen.add(normalized);
       return true;
-    })
-    .slice(0, 3);
+    });
 }
 
 export function DownloadsBrowser({
