@@ -161,34 +161,6 @@ export function ServerSettingsDialog({
               </div>
             ) : null}
 
-            <div className="server-settings-dialog__item">
-              <div className="server-settings-dialog__item-copy">
-                <strong>Allow per-request MCPs</strong>
-                <small>Permit MCP configuration in requests</small>
-              </div>
-              <Switch
-                className="tide-switch"
-                checked={draft.allowPerRequestMcps}
-                label="Allow per-request MCPs"
-                onChange={(allowPerRequestMcps) =>
-                  update({ allowPerRequestMcps })
-                }
-              />
-            </div>
-
-            <div className="server-settings-dialog__item is-disabled">
-              <div className="server-settings-dialog__item-copy">
-                <strong>Allow mcp.json servers</strong>
-                <small>Not available yet</small>
-              </div>
-              <Switch
-                className="tide-switch"
-                checked={draft.allowMcpJsonServers}
-                disabled
-                label="Allow calling servers from mcp.json"
-                onChange={() => undefined}
-              />
-            </div>
           </div>
         </section>
 
