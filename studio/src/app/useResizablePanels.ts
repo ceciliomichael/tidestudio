@@ -12,7 +12,7 @@ const STANDARD_MIN_RIGHT_WIDTH = 260;
 const STANDARD_MAX_RIGHT_WIDTH = 440;
 const DETAIL_MIN_RIGHT_WIDTH = 480;
 const DETAIL_MAX_RIGHT_WIDTH = 1100;
-const STANDARD_MIN_MAIN_WIDTH = 350;
+const STANDARD_MIN_MAIN_WIDTH = 500;
 const DETAIL_MIN_MAIN_WIDTH = 360;
 const HANDLE_LAYOUT_WIDTH = 0;
 
@@ -127,7 +127,7 @@ function fitToContainer(
   if (overflow > 0) {
     const rightReduction = Math.min(
       overflow,
-      right - limits.minRight,
+      right - effectiveMinRight,
     );
     right -= rightReduction;
     overflow -= rightReduction;

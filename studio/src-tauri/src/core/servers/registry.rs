@@ -19,6 +19,11 @@ pub struct ServerStatus {
     pub backend: String,
     pub model_path: String,
     pub model_id: String,
+    pub model_name: String,
+    pub model_category: String,
+    pub quantization: String,
+    pub supports_mtp: bool,
+    pub supports_vision: bool,
     pub port: u16,
     pub pid: u32,
     pub memory_bytes: u64,
@@ -40,6 +45,11 @@ struct RegisteredServer {
     backend: String,
     model_path: String,
     model_id: String,
+    model_name: String,
+    model_category: String,
+    quantization: String,
+    supports_mtp: bool,
+    supports_vision: bool,
     inference_defaults: InferenceDefaults,
     state: ServerLifecycle,
     instance: Box<dyn ManagedInference>,
@@ -73,6 +83,11 @@ impl ServerRegistry {
         let backend = self.backend.id().to_string();
         let model_path = config.model_path.clone();
         let model_id = config.model_id.clone();
+        let model_name = config.model_name.clone();
+        let model_category = config.model_category.clone();
+        let quantization = config.quantization.clone();
+        let supports_mtp = config.supports_mtp;
+        let supports_vision = config.supports_vision;
         let inference_defaults = InferenceDefaults::from(&config);
         let port = config.port;
         let instance = self.backend.start(&config)?;
@@ -80,6 +95,11 @@ impl ServerRegistry {
             backend: backend.clone(),
             model_path: model_path.clone(),
             model_id: model_id.clone(),
+            model_name: model_name.clone(),
+            model_category: model_category.clone(),
+            quantization: quantization.clone(),
+            supports_mtp,
+            supports_vision,
             port,
             pid: instance.pid(),
             memory_bytes: 0,
@@ -93,6 +113,11 @@ impl ServerRegistry {
                 backend,
                 model_path,
                 model_id,
+                model_name,
+                model_category,
+                quantization,
+                supports_mtp,
+                supports_vision,
                 inference_defaults,
                 state: ServerLifecycle::Loading,
                 instance,
@@ -162,6 +187,11 @@ impl ServerRegistry {
             backend: server.backend,
             model_path: server.model_path,
             model_id: server.model_id,
+            model_name: server.model_name,
+            model_category: server.model_category,
+            quantization: server.quantization,
+            supports_mtp: server.supports_mtp,
+            supports_vision: server.supports_vision,
             port,
             pid,
             memory_bytes: process_memory_bytes(pid),
@@ -209,6 +239,11 @@ impl ServerRegistry {
             backend: server.backend.clone(),
             model_path: server.model_path.clone(),
             model_id: server.model_id.clone(),
+            model_name: server.model_name.clone(),
+            model_category: server.model_category.clone(),
+            quantization: server.quantization.clone(),
+            supports_mtp: server.supports_mtp,
+            supports_vision: server.supports_vision,
             port,
             pid,
             memory_bytes: if server.state == ServerLifecycle::Ready && running {
@@ -276,12 +311,15 @@ mod tests {
     fn config() -> ServerConfig {
         ServerConfig {
             model_path: "model.gguf".to_string(),
-            model_category: "LLM".to_string(),
+            model_name: "Laya".to_string(),
+            model_category: "DECISION".to_string(),
+            quantization: "F16".to_string(),
             supports_reasoning: false,
             supports_thinking_toggle: false,
             supports_reasoning_effort: false,
             supports_reasoning_preserve: false,
             supports_mtp: false,
+            supports_vision: true,
             model_id: "model".to_string(),
             port: 32123,
             context_size: None,
@@ -320,15 +358,25 @@ mod tests {
         let loading = registry.spawn(config()).expect("worker should spawn");
         assert_eq!(loading.state, ServerLifecycle::Loading);
         assert!(loading.running);
+        assert_eq!(loading.model_name, "Laya");
+        assert_eq!(loading.model_category, "DECISION");
+        assert_eq!(loading.quantization, "F16");
+        assert!(loading.supports_vision);
 
         let listed = registry.list().expect("worker should list");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].state, ServerLifecycle::Loading);
+        assert_eq!(listed[0].model_name, "Laya");
+        assert_eq!(listed[0].model_category, "DECISION");
+        assert_eq!(listed[0].quantization, "F16");
 
         let ready = registry
             .mark_ready(loading.port)
             .expect("worker should become ready");
         assert_eq!(ready.state, ServerLifecycle::Ready);
         assert!(ready.running);
+        assert_eq!(ready.model_name, "Laya");
+        assert_eq!(ready.model_category, "DECISION");
+        assert_eq!(ready.quantization, "F16");
     }
 }

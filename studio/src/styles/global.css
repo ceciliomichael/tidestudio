@@ -1934,11 +1934,27 @@ h2 {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  overflow: hidden;
 }
 
 .running-model-card__identity-group .running-model-card__select {
   min-width: 0;
+  flex: 0 1 auto;
+}
+
+.running-model-card__model-name-badge {
+  min-width: 0;
+  height: 28px;
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0 8px;
+  color: inherit;
+  background: var(--color-surface);
+  text-align: left;
 }
 
 .running-model-card__identity {
@@ -1949,32 +1965,26 @@ h2 {
   overflow: hidden;
 }
 
-.running-model-card__model-pill {
-  min-width: 0;
-  max-width: 100%;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 0 9px;
-  background: var(--color-surface);
-}
-
-.running-model-card__model-pill strong {
+.running-model-card__model-name {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--color-brand);
   font-size: 11px;
   font-weight: 570;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .running-model-card__model-type {
+  height: 28px;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0 8px;
   color: var(--color-muted-foreground);
+  background: var(--color-surface);
   font-size: 10px;
   font-weight: 540;
   text-transform: uppercase;
@@ -4331,7 +4341,8 @@ body {
 
 .main-panel {
   border-left: 1px solid var(--color-border-muted);
-  border-radius: var(--radius-panel) 0 0 var(--radius-panel);
+  border-radius: var(--radius-panel) 0 0 0;
+  container-type: inline-size;
 }
 
 .inspector-panel {
@@ -4953,9 +4964,23 @@ body {
   gap: 8px;
 }
 
+@container (max-width: 560px) {
+  .server-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .server-page-header__actions {
+    justify-content: flex-start;
+  }
+}
+
 .running-model-region {
+  position: relative;
   gap: 10px;
-  padding: 16px 20px 18px;
+  overflow: hidden;
+  padding: 16px 20px 2px;
 }
 
 .running-model-region__heading h3,
@@ -4964,8 +4989,14 @@ body {
 }
 
 .running-model-stack {
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
+  grid-auto-rows: max-content;
+  overflow-y: auto;
   gap: 10px;
   border-top: 0;
+  padding-bottom: 54px;
 }
 
 .running-model-card {
@@ -4995,7 +5026,7 @@ body {
   background: var(--color-brand-soft);
 }
 
-.running-model-card__model-pill {
+.running-model-card__model-type {
   height: 28px;
   border: 0;
   border-radius: 5px;
@@ -5003,7 +5034,13 @@ body {
   background: var(--color-surface-muted);
 }
 
-.running-model-card__model-pill strong {
+.running-model-card__model-name-badge {
+  border: 0;
+  border-radius: 5px;
+  background: var(--color-surface-muted);
+}
+
+.running-model-card__model-name {
   color: var(--color-foreground);
 }
 
@@ -5036,11 +5073,17 @@ body {
 }
 
 .supported-endpoints-panel {
-  width: calc(100% - 40px);
-  margin-top: auto;
-  margin-right: 20px;
-  margin-bottom: 12px;
-  margin-left: 20px;
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  left: 6px;
+  z-index: 20;
+  width: auto;
+  min-height: 0;
+  max-height: calc(100% - 8px);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 10px;
@@ -5049,16 +5092,21 @@ body {
 }
 
 .supported-endpoints-panel__header {
+  flex: 0 0 auto;
   min-height: 34px;
   padding: 7px 10px;
 }
 
 .supported-endpoints-panel__segments {
+  flex: 0 0 auto;
   max-width: 540px;
-  padding: 2px 10px 6px;
+  padding: 6px 10px;
 }
 
 .supported-endpoints-panel__list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
   gap: 0;
   padding: 0 10px 8px;
 }

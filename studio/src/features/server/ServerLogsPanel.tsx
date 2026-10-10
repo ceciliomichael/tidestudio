@@ -10,10 +10,6 @@ type Props = {
   onToggleCollapsed: () => void;
 };
 
-function fileName(path: string) {
-  return path.split(/[\\/]/).pop() || path;
-}
-
 export function ServerLogsPanel({
   server,
   logs,
@@ -21,10 +17,6 @@ export function ServerLogsPanel({
   height,
   onToggleCollapsed,
 }: Props) {
-  const heading = server
-    ? `${fileName(server.modelPath)} · localhost:${server.port}`
-    : "Select a running model to view its llama-server output.";
-
   const output = server
     ? logs.length > 0
       ? logs.join("\n")
@@ -55,9 +47,6 @@ export function ServerLogsPanel({
             <TerminalSquare size={15} strokeWidth={1.9} aria-hidden="true" />
             <strong>API Logs</strong>
           </span>
-          {!collapsed ? (
-            <span className="server-logs-panel__subtitle">{heading}</span>
-          ) : null}
         </span>
 
         <ChevronDown

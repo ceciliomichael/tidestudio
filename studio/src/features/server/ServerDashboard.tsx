@@ -212,35 +212,34 @@ export function ServerDashboard({
                   </div>
 
                   <div className="running-model-card__bottom">
-                    <div className="running-model-card__select">
-                      <span className="running-model-card__identity">
-                        <span className="running-model-card__model-pill">
-                          <span className="running-model-card__model-type">
-                            {model.category}
-                          </span>
-                          <strong>{model.name}</strong>
-                        </span>
-                        {model.quantization &&
-                        model.quantization !== "Unknown" ? (
-                          <span className="running-model-card__capability">
-                            {model.quantization}
-                          </span>
-                        ) : null}
-                        {model.supportsMtp ? (
-                          <span className="running-model-card__capability">
-                            MTP
-                          </span>
-                        ) : null}
-                        {model.supportsVision ? (
-                          <span
-                            className="running-model-card__capability running-model-card__capability--vision"
-                            title="Vision capable"
-                            aria-label="Vision capable"
-                          >
-                            <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
-                          </span>
-                        ) : null}
+                    <div className="running-model-card__identity-group">
+                      <span className="running-model-card__model-type">
+                        {model.category}
                       </span>
+                      <span className="running-model-card__model-name-badge">
+                        <strong className="running-model-card__model-name">
+                          {model.name}
+                        </strong>
+                      </span>
+                      {model.quantization && model.quantization !== "Unknown" ? (
+                        <span className="running-model-card__capability">
+                          {model.quantization}
+                        </span>
+                      ) : null}
+                      {model.supportsMtp ? (
+                        <span className="running-model-card__capability">
+                          MTP
+                        </span>
+                      ) : null}
+                      {model.supportsVision ? (
+                        <span
+                          className="running-model-card__capability running-model-card__capability--vision"
+                          title="Vision capable"
+                          aria-label="Vision capable"
+                        >
+                          <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="running-model-card__actions">
@@ -263,10 +262,16 @@ export function ServerDashboard({
               ))}
 
               {runningServers.map((server) => {
-              const model = allModels.find(
-                (candidate) => candidate.path === server.modelPath,
-              );
-              return (
+                const model = allModels.find(
+                  (candidate) => candidate.path === server.modelPath,
+                );
+                const modelName =
+                  model?.name || server.modelName || fileName(server.modelPath);
+                const quantization = model?.quantization || server.quantization;
+                const supportsMtp = model?.supportsMtp ?? server.supportsMtp;
+                const supportsVision =
+                  model?.supportsVision ?? server.supportsVision;
+                return (
                 <article
                   className={
                     selectedPort === server.port
@@ -298,42 +303,37 @@ export function ServerDashboard({
 
                   <div className="running-model-card__bottom">
                     <div className="running-model-card__identity-group">
+                      <span className="running-model-card__model-type">
+                        {model?.category ?? server.modelCategory}
+                      </span>
                       <button
-                        className="running-model-card__select"
+                        className="running-model-card__model-name-badge"
                         type="button"
                         onClick={() => onSelectServer(server.port)}
                       >
-                        <span className="running-model-card__identity">
-                          <span className="running-model-card__model-pill">
-                            <span className="running-model-card__model-type">
-                              {model?.category ?? "LLM"}
-                            </span>
-                            <strong>
-                              {model?.name ?? fileName(server.modelPath)}
-                            </strong>
-                          </span>
-                          {model?.quantization &&
-                          model.quantization !== "Unknown" ? (
-                            <span className="running-model-card__capability">
-                              {model.quantization}
-                            </span>
-                          ) : null}
-                          {model?.supportsMtp ? (
-                            <span className="running-model-card__capability">
-                              MTP
-                            </span>
-                          ) : null}
-                          {model?.supportsVision ? (
-                            <span
-                              className="running-model-card__capability running-model-card__capability--vision"
-                              title="Vision capable"
-                              aria-label="Vision capable"
-                            >
-                              <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
-                            </span>
-                          ) : null}
-                        </span>
+                        <strong className="running-model-card__model-name">
+                          {modelName}
+                        </strong>
                       </button>
+                      {quantization && quantization !== "Unknown" ? (
+                        <span className="running-model-card__capability">
+                          {quantization}
+                        </span>
+                      ) : null}
+                      {supportsMtp ? (
+                        <span className="running-model-card__capability">
+                          MTP
+                        </span>
+                      ) : null}
+                      {supportsVision ? (
+                        <span
+                          className="running-model-card__capability running-model-card__capability--vision"
+                          title="Vision capable"
+                          aria-label="Vision capable"
+                        >
+                          <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
+                        </span>
+                      ) : null}
                       <IconButton
                         className="running-model-card__model-copy"
                         icon={
@@ -371,7 +371,7 @@ export function ServerDashboard({
                     </div>
                   </div>
                 </article>
-              );
+                );
               })}
             </>
           )}

@@ -68,7 +68,12 @@ export function SupportedEndpointsPanel() {
 
     void getUiPreference(COLLAPSED_PREFERENCE_KEY)
       .then((value) => {
-        if (!active || value === null) {
+        if (!active) {
+          return;
+        }
+
+        if (value === null) {
+          void setUiPreference(COLLAPSED_PREFERENCE_KEY, "true");
           return;
         }
 

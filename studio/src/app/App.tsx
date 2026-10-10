@@ -141,28 +141,28 @@ function createModelConfig(model: CatalogModel): ModelConfig {
 
 function runtimeCatalogModel(server: ServerStatus): CatalogModel {
   const fileName = server.modelPath.split(/[\\/]/).pop() || server.modelPath;
-  const name = fileName.replace(/\.gguf$/i, "");
+  const name = server.modelName || fileName.replace(/\.gguf$/i, "");
 
   return {
     id: `runtime-${server.port}`,
     name,
     path: server.modelPath,
     publisher: "Local",
-    category: "LLM",
+    category: server.modelCategory,
     architecture: "Unknown",
     parameters: "Unknown",
     contextLength: "Unknown",
     poolingType: null,
-    quantization: "Unknown",
+    quantization: server.quantization || "Unknown",
     size: "Loaded",
     modified: "Running",
     chatTemplate: null,
-    supportsMtp: false,
+    supportsMtp: server.supportsMtp,
     supportsReasoning: false,
     supportsThinkingToggle: false,
     supportsReasoningEffort: false,
     supportsReasoningPreserve: false,
-    supportsVision: false,
+    supportsVision: server.supportsVision,
   };
 }
 
@@ -696,12 +696,15 @@ export function App() {
       catalogConfigs[model.path] ?? createModelConfig(model);
     const config: ServerConfig = {
       modelPath: model.path,
+      modelName: model.name,
       modelCategory: model.category,
+      quantization: model.quantization,
       supportsReasoning: model.supportsReasoning,
       supportsThinkingToggle: model.supportsThinkingToggle,
       supportsReasoningEffort: model.supportsReasoningEffort,
       supportsReasoningPreserve: model.supportsReasoningPreserve,
       supportsMtp: model.supportsMtp,
+      supportsVision: model.supportsVision,
       ...modelConfig,
       speculativeMode:
         model.category !== "LLM"

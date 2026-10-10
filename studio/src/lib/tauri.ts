@@ -33,18 +33,26 @@ export type ModelInfo = {
 
 export type ServerConfig = ModelConfig & {
   modelPath: string;
+  modelName: string;
   modelCategory: ModelInfo["category"];
+  quantization: string;
   supportsReasoning: boolean;
   supportsThinkingToggle: boolean;
   supportsReasoningEffort: boolean;
   supportsReasoningPreserve: boolean;
   supportsMtp: boolean;
+  supportsVision: boolean;
 };
 
 export type ServerStatus = {
   backend: string;
   modelPath: string;
   modelId: string;
+  modelName: string;
+  modelCategory: ModelInfo["category"];
+  quantization: string;
+  supportsMtp: boolean;
+  supportsVision: boolean;
   port: number;
   pid: number;
   memoryBytes: number;

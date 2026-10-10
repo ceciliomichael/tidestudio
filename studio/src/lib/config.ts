@@ -106,7 +106,7 @@ export type ReasoningCapabilities = {
 
 export function createDefaultModelConfig(): ModelConfig {
   return {
-    contextSize: 32768,
+    contextSize: 4096,
     gpuLayers: 99,
     systemPrompt: "",
     chatTemplate: "",

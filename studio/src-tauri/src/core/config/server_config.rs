@@ -17,8 +17,12 @@ pub enum SpeculativeMode {
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub model_path: String,
+    #[serde(default)]
+    pub model_name: String,
     #[serde(default = "default_model_category")]
     pub model_category: String,
+    #[serde(default)]
+    pub quantization: String,
     #[serde(default)]
     pub supports_reasoning: bool,
     #[serde(default)]
@@ -29,6 +33,8 @@ pub struct ServerConfig {
     pub supports_reasoning_preserve: bool,
     #[serde(default)]
     pub supports_mtp: bool,
+    #[serde(default)]
+    pub supports_vision: bool,
     #[serde(default)]
     pub model_id: String,
     #[serde(default)]
