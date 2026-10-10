@@ -9,7 +9,7 @@
     "build:api-gateway": "node scripts/build-api-gateway.mjs",
     "prepare:llama": "node scripts/prepare-llama-runtime.mjs",
     "stage:release-runtime": "node scripts/stage-release-runtime.mjs",
-    "release:windows": "tauri build --bundles nsis",
+    "release:windows": "tauri build --ci --bundles nsis",
     "tauri": "tauri"
   },
   "dependencies": {

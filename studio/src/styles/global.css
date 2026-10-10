@@ -2323,6 +2323,12 @@ h2 {
   color: #c7c7c9;
 }
 
+:root[data-theme="dark"] .running-model-card__capability--vision {
+  border-color: transparent;
+  color: var(--color-warning);
+  background: var(--color-warning-surface);
+}
+
 :root[data-theme="dark"] .running-model-card__state {
   color: #b8cec9;
 }
@@ -5247,8 +5253,8 @@ body {
 
 .running-model-card__capability--vision {
   border: 0;
-  color: var(--color-warning);
-  background: var(--color-warning-surface);
+  color: #a8640b;
+  background: #fff6e8;
 }
 
 .running-model-card__memory {
