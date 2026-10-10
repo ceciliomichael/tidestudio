@@ -8,6 +8,7 @@
     "core:window:allow-set-min-size",
     "core:window:allow-set-theme",
     "core:window:allow-set-background-color",
+    "dialog:allow-open",
     "opener:default"
   ]
 }

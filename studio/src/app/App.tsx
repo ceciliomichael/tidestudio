@@ -31,6 +31,7 @@ import {
   downloadHuggingFaceFile,
   downloadModelScopeFile,
   gatewayStatus,
+  getModelsDirectory,
   getUiPreference,
   huggingFaceModelFiles,
   loadModelSettings,
@@ -41,11 +42,14 @@ import {
   searchModelScopeModels,
   serverLogs,
   saveModelSettings,
+  resetModelsDirectory,
+  setModelsDirectory,
   setUiPreference,
   startServer,
   stopServer,
   updateServerInference,
   type ModelInfo,
+  type ModelsDirectoryInfo,
   type ServerConfig,
   type ServerStartFailure,
   type ServerStatus,
@@ -64,7 +68,7 @@ import {
 import { ResizableWorkspace } from "./ResizableWorkspace";
 import { SettingsSidebar, type SettingsSectionId } from "../features/settings/SettingsSidebar";
 import { GeneralSettings } from "../features/settings/GeneralSettings";
-import { UpdatesSettings } from "../features/settings/UpdatesSettings";
+import { ConfigurationSettings } from "../features/settings/ConfigurationSettings";
 import { useAppearancePreferences } from "../lib/appearance";
 import {
   type WorkspacePanelPreferences,
@@ -182,6 +186,9 @@ export function App({ initialPanelPreferences }: AppProps) {
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const { appearance, language, changeAppearance, changeLanguage } = useAppearancePreferences();
   const [localModels, setLocalModels] = useState<CatalogModel[]>([]);
+  const [modelsDirectory, setModelsDirectoryInfo] =
+    useState<ModelsDirectoryInfo | null>(null);
+  const [modelsDirectoryBusy, setModelsDirectoryBusy] = useState(false);
   const [catalogSelectedId, setCatalogSelectedId] = useState("");
   const [catalogConfigs, setCatalogConfigs] = useState<
     Record<string, ModelConfig>
@@ -268,6 +275,7 @@ export function App({ initialPanelPreferences }: AppProps) {
 
   useEffect(() => {
     void refreshLocalModels();
+    void refreshModelsDirectory();
     void refreshServers();
     void restoreServerSettings();
   }, []);
@@ -540,6 +548,7 @@ export function App({ initialPanelPreferences }: AppProps) {
           } catch {
             return [model.path, fallback] as const;
           }
+
         }),
       );
 
@@ -564,6 +573,46 @@ export function App({ initialPanelPreferences }: AppProps) {
       });
     } catch (cause) {
       setError(String(cause));
+    }
+  }
+
+  async function refreshModelsDirectory() {
+    try {
+      setModelsDirectoryInfo(await getModelsDirectory());
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }
+
+  async function applyModelsDirectory(path: string) {
+    setModelsDirectoryBusy(true);
+    try {
+      const next = await setModelsDirectory(path);
+      setModelsDirectoryInfo(next);
+      setCatalogSelectedId("");
+      setCatalogConfigs({});
+      await refreshLocalModels();
+      setError(null);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setModelsDirectoryBusy(false);
+    }
+  }
+
+  async function restoreDefaultModelsDirectory() {
+    setModelsDirectoryBusy(true);
+    try {
+      const next = await resetModelsDirectory();
+      setModelsDirectoryInfo(next);
+      setCatalogSelectedId("");
+      setCatalogConfigs({});
+      await refreshLocalModels();
+      setError(null);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setModelsDirectoryBusy(false);
     }
   }
 
@@ -1007,7 +1056,12 @@ export function App({ initialPanelPreferences }: AppProps) {
                     onLanguageChange={changeLanguage}
                   />
                 ) : (
-                  <UpdatesSettings />
+                  <ConfigurationSettings
+                    directory={modelsDirectory}
+                    busy={modelsDirectoryBusy}
+                    onDirectoryChange={applyModelsDirectory}
+                    onReset={restoreDefaultModelsDirectory}
+                  />
                 )}
               </div>
             ) : activePage === "server" ? (

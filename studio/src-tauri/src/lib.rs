@@ -26,6 +26,16 @@ impl Default for AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let stored = commands::preferences::get_ui_preference_sync(
+                app.handle(),
+                core::paths::MODEL_STORAGE_PREFERENCE_KEY,
+            )
+            .map_err(std::io::Error::other)?;
+            core::paths::initialize_models_dir(stored.as_deref()).map_err(std::io::Error::other)?;
+            Ok(())
+        })
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::downloads::search_huggingface_models,
@@ -35,6 +45,9 @@ pub fn run() {
             commands::downloads::modelscope_model_files,
             commands::downloads::download_modelscope_file,
             commands::models::list_models,
+            commands::models::get_models_directory,
+            commands::models::set_models_directory,
+            commands::models::reset_models_directory,
             commands::models::load_model_settings,
             commands::models::save_model_settings,
             commands::models::delete_model,

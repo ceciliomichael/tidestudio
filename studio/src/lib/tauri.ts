@@ -75,6 +75,12 @@ export type GatewayConfig = {
   corsEnabled: boolean;
 };
 
+export type ModelsDirectoryInfo = {
+  path: string;
+  defaultPath: string;
+  isDefault: boolean;
+};
+
 export const configureGateway = (config: GatewayConfig) =>
   invoke<void>("configure_gateway", { config });
 
@@ -84,6 +90,15 @@ export const configureGatewayBackground = (config: GatewayConfig) =>
 export const gatewayStatus = () => invoke<boolean>("gateway_status");
 
 export const listModels = () => invoke<ModelInfo[]>("list_models");
+
+export const getModelsDirectory = () =>
+  invoke<ModelsDirectoryInfo>("get_models_directory");
+
+export const setModelsDirectory = (path: string) =>
+  invoke<ModelsDirectoryInfo>("set_models_directory", { path });
+
+export const resetModelsDirectory = () =>
+  invoke<ModelsDirectoryInfo>("reset_models_directory");
 
 export const loadModelSettings = (modelPath: string) =>
   invoke<ModelSettingsFile | null>("load_model_settings", { modelPath });

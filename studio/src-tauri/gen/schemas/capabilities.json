@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default TideStudio capability","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-set-min-size","core:window:allow-set-theme","core:window:allow-set-background-color","opener:default"]}}
+{"default":{"identifier":"default","description":"Default TideStudio capability","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-set-min-size","core:window:allow-set-theme","core:window:allow-set-background-color","dialog:allow-open","opener:default"]}}
