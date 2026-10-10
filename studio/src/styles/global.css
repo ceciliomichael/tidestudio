@@ -1264,8 +1264,8 @@ h2 {
 .model-catalog__header,
 .model-catalog-row {
   display: grid;
-  width: max(100%, 958px);
-  min-width: 958px;
+  width: max(100%, 974px);
+  min-width: 974px;
   box-sizing: border-box;
   grid-template-columns:
     165px
@@ -1273,7 +1273,7 @@ h2 {
     82px
     86px
     82px
-    116px
+    132px
     82px
     minmax(80px, 1fr);
   align-items: center;
@@ -1293,6 +1293,10 @@ h2 {
   text-transform: uppercase;
 }
 
+.model-catalog__header > span {
+  white-space: nowrap;
+}
+
 .model-catalog__body {
   min-width: 0;
   min-height: 0;
@@ -1307,8 +1311,8 @@ h2 {
 }
 
 .model-catalog__body-content {
-  width: max(100%, 958px);
-  min-width: 958px;
+  width: max(100%, 974px);
+  min-width: 974px;
   transform: translateX(var(--model-catalog-scroll-x));
 }
 
