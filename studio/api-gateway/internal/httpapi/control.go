@@ -43,6 +43,39 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, http.StatusOK, s.registry.List())
 		return
 	}
+	if r.URL.Path == "/_tidestudio/jit/models" && r.Method == http.MethodPut {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		var ids []string
+		if json.NewDecoder(r.Body).Decode(&ids) != nil {
+			http.Error(w, "invalid model catalog", http.StatusBadRequest)
+			return
+		}
+		s.jit.setInstalled(ids)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.URL.Path == "/_tidestudio/jit/actions" && r.Method == http.MethodGet {
+		if action, ok := s.jit.nextAction(s.cfg, s.registry.List()); ok {
+			sendJSON(w, http.StatusOK, action)
+		} else {
+			w.WriteHeader(http.StatusNoContent)
+		}
+		return
+	}
+	if r.URL.Path == "/_tidestudio/jit/fail" && r.Method == http.MethodPost {
+		var failure struct {
+			ModelID string `json:"model_id"`
+			Error   string `json:"error"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
+		if json.NewDecoder(r.Body).Decode(&failure) != nil || failure.ModelID == "" {
+			http.Error(w, "invalid JIT failure", http.StatusBadRequest)
+			return
+		}
+		s.jit.failed(failure.ModelID, failure.Error)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	const prefix = "/_tidestudio/workers/"
 	if !strings.HasPrefix(r.URL.Path, prefix) {
@@ -58,6 +91,7 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodDelete {
 		s.registry.Unregister(id)
+		s.jit.unregistered(id)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -78,5 +112,6 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
+	s.jit.registered(id)
 	w.WriteHeader(http.StatusNoContent)
 }

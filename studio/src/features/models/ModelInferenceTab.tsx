@@ -82,8 +82,8 @@ export function ModelInferenceTab({
             placeholder="You are a helpful assistant."
             hint={
               runtimeLoaded
-                ? "Applies immediately to new requests. A request-provided system prompt overrides it."
-                : "Saved as this model's default system prompt. A request-provided system prompt overrides it."
+                ? "Applies immediately to new requests. Combined before any request-provided system prompt."
+                : "Saved as this model's default system prompt. Combined before any request-provided system prompt."
             }
             onChange={(event) =>
               update({ systemPrompt: event.target.value })

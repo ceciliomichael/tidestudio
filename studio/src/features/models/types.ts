@@ -20,4 +20,5 @@ export type CatalogModel = {
   supportsReasoningEffort: boolean;
   supportsReasoningPreserve: boolean;
   supportsVision: boolean;
+  supportsTools: boolean;
 };

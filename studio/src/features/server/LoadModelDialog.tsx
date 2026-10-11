@@ -1,6 +1,5 @@
-import { ChevronRight, Search, Square, X } from "lucide-react";
+import { Eye, Hammer, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Button } from "../../components/ui/Button";
 import { IconButton } from "../../components/ui/IconButton";
 import { Modal } from "../../components/ui/Modal";
 import { SegmentedField } from "../../components/ui/SegmentedField";
@@ -33,20 +32,18 @@ type Props = {
   open: boolean;
   allModels: CatalogModel[];
   loadedModels: CatalogModel[];
-  pendingModelPaths: string[];
+  loadingModelPaths: string[];
   onClose: () => void;
   onLoad: (model: CatalogModel) => void;
-  onStop: (modelId: string) => void;
 };
 
 export function LoadModelDialog({
   open,
   allModels,
   loadedModels,
-  pendingModelPaths,
+  loadingModelPaths,
   onClose,
   onLoad,
-  onStop,
 }: Props) {
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("recent");
@@ -75,7 +72,6 @@ export function LoadModelDialog({
   }, [allModels, query, sortMode]);
 
   const loadedIds = new Set(loadedModels.map((model) => model.id));
-  const loadedById = new Map(loadedModels.map((model) => [model.id, model]));
 
   return (
     <Modal
@@ -126,10 +122,17 @@ export function LoadModelDialog({
           </div>
 
           <div className="load-model-dialog__catalog">
+            <div className="load-model-dialog__catalog-header" role="row">
+              <span>Model</span>
+              <span>Publisher</span>
+              <span>Params</span>
+              <span>Architecture</span>
+              <span>Type</span>
+              <span>Size</span>
+            </div>
             {filteredModels.map((model) => {
               const loaded = loadedIds.has(model.id);
-              const loading = pendingModelPaths.includes(model.path);
-              const loadedModel = loadedById.get(model.id);
+              const loading = loadingModelPaths.includes(model.path);
 
               return (
                 <div
@@ -162,43 +165,47 @@ export function LoadModelDialog({
                   }
                 >
                   <div className="load-model-dialog__catalog-name">
-                    <div>
-                      <strong title={model.name}>{model.name}</strong>
-                      <span className="load-model-dialog__inline-meta">
-                        <span>{model.quantization}</span>
-                        {model.supportsMtp ? <span>MTP</span> : null}
-                        <span>{model.publisher}</span>
-                      </span>
+                    <strong title={model.name}>{model.name}</strong>
+                    <div className="load-model-dialog__capabilities">
+                      {model.quantization && model.quantization !== "Unknown" ? (
+                        <span className="load-model-dialog__capability" title={`Quantization: ${model.quantization}`}>
+                          {model.quantization}
+                        </span>
+                      ) : null}
+                      {model.supportsMtp ? (
+                        <span className="load-model-dialog__capability" title="Multi-token prediction (MTP)">MTP</span>
+                      ) : null}
+                      {model.supportsVision ? (
+                        <span
+                          className="load-model-dialog__capability load-model-dialog__capability--vision"
+                          title="Vision capable"
+                          aria-label="Vision capable"
+                        >
+                          <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
+                        </span>
+                      ) : null}
+                      {model.supportsTools ? (
+                        <span
+                          className="load-model-dialog__capability load-model-dialog__capability--tools"
+                          title="Tool-use indicators detected in the chat template or metadata; training and runtime compatibility are not verified"
+                          aria-label="Tool-use indicators detected; not verified"
+                        >
+                          <Hammer size={13} strokeWidth={1.9} aria-hidden="true" />
+                        </span>
+                      ) : null}
+                      {loaded ? (
+                        <span className="load-model-dialog__status">
+                          {loading ? "Loading" : "Loaded"}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 
+                  <span className="load-model-dialog__catalog-publisher" title={model.publisher}>{model.publisher}</span>
                   <span>{model.parameters}</span>
                   <span>{model.architecture}</span>
                   <span className="load-model-dialog__catalog-type">{model.category}</span>
                   <span>{model.size}</span>
-
-                  <div className="load-model-dialog__catalog-actions">
-                    {loaded ? (
-                      <Button
-                        variant="danger"
-                        size="compact"
-                        disabled={loading}
-                        onClick={() => onStop(loadedModel?.id ?? model.id)}
-                      >
-                        {loading ? null : (
-                          <Square size={10} strokeWidth={2} aria-hidden="true" />
-                        )}
-                        {loading ? "Loading" : "Stop"}
-                      </Button>
-                    ) : (
-                      <ChevronRight
-                        className="load-model-dialog__row-chevron"
-                        size={14}
-                        strokeWidth={1.8}
-                        aria-hidden="true"
-                      />
-                    )}
-                  </div>
                 </div>
               );
             })}

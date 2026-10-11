@@ -1,6 +1,7 @@
 use crate::core::{
     backends::ManagedInference,
     config::{ServerConfig, SpeculativeMode},
+    process::hide_console,
 };
 use std::{
     collections::VecDeque,
@@ -114,6 +115,7 @@ pub fn spawn_llama_server(
     }
 
     command.args(&config.extra_args);
+    hide_console(&mut command);
 
     let mut child = command
         .spawn()
@@ -133,8 +135,11 @@ pub fn spawn_llama_server(
 }
 
 fn ensure_cuda_available(executable: &Path) -> Result<(), String> {
-    let output = Command::new(executable)
-        .arg("--list-devices")
+    let mut command = Command::new(executable);
+    command.arg("--list-devices");
+    hide_console(&mut command);
+
+    let output = command
         .output()
         .map_err(|error| format!("failed to inspect llama.cpp GPU devices: {error}"))?;
     let device_list = format!(

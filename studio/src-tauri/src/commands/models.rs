@@ -72,10 +72,13 @@ pub fn reset_models_directory(app: tauri::AppHandle) -> Result<ModelsDirectoryIn
 }
 
 #[tauri::command]
-pub async fn list_models() -> Result<Vec<ModelInfo>, String> {
-    tauri::async_runtime::spawn_blocking(discover_models)
+pub async fn list_models(app: tauri::AppHandle) -> Result<Vec<ModelInfo>, String> {
+    let models = tauri::async_runtime::spawn_blocking(discover_models)
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    let sync_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || super::jit::sync_catalog(&sync_app));
+    models
 }
 
 #[tauri::command]

@@ -31,6 +31,7 @@ impl GatewayClient {
         model_id: &str,
         port: u16,
         defaults: &InferenceDefaults,
+        jit: bool,
     ) -> Result<(), String> {
         let path = format!("/_tidestudio/workers/{}", encode_model_id(model_id));
         let response = self
@@ -41,6 +42,7 @@ impl GatewayClient {
                 "model_id": model_id,
                 "base_url": format!("http://127.0.0.1:{port}"),
                 "defaults": defaults,
+                "jit": jit,
             }))
             .send()
             .map_err(|error| format!("gateway registration failed: {error}"))?;

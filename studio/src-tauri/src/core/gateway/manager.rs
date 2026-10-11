@@ -45,9 +45,10 @@ impl GatewayManager {
         model_id: &str,
         port: u16,
         defaults: &InferenceDefaults,
+        jit: bool,
     ) -> Result<(), String> {
         let config = self.config.as_ref().ok_or("gateway is not configured")?;
-        self.client.register(config, model_id, port, defaults)
+        self.client.register(config, model_id, port, defaults, jit)
     }
 
     pub fn unregister(&self, model_id: &str) -> Result<(), String> {
@@ -68,6 +69,17 @@ impl GatewayManager {
 
     pub fn matches_config(&self, config: &GatewayConfig) -> bool {
         self.config.as_ref() == Some(config)
+    }
+
+    pub fn control_endpoint(&mut self) -> Option<(u16, String)> {
+        if !self.is_running() {
+            return None;
+        }
+        let config = self.config.as_ref()?;
+        if !config.jit_model_loading {
+            return None;
+        }
+        Some((config.port, self.client.token.clone()))
     }
 
     pub fn shutdown(&mut self) {

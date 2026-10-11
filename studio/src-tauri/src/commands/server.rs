@@ -3,12 +3,12 @@ use crate::{
     core::{
         config::{InferenceDefaults, ServerConfig},
         gateway::GatewayConfig,
-        models::resolve_models_dir,
+        models::model_id,
         servers::{ServerLifecycle, ServerStatus},
     },
 };
 use serde::Serialize;
-use std::{net::TcpListener, path::Path, time::Duration};
+use std::{net::TcpListener, time::Duration};
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, Debug, Serialize)]
@@ -18,18 +18,6 @@ struct ServerStartFailure {
     model_id: String,
     model_path: String,
     error: String,
-}
-
-fn public_model_id(path: &str) -> Result<String, String> {
-    let root = resolve_models_dir()?
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
-    let file = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
-    let relative = file
-        .strip_prefix(&root)
-        .map_err(|_| "model must be in the managed models directory".to_string())?;
-    let id = relative.to_string_lossy().replace('\\', "/");
-    Ok(id.strip_suffix(".gguf").unwrap_or(&id).to_string())
 }
 
 fn allocate_worker_port(public_port: u16) -> Result<u16, String> {
@@ -45,9 +33,17 @@ fn allocate_worker_port(public_port: u16) -> Result<u16, String> {
 }
 
 fn worker_is_ready(client: &reqwest::blocking::Client, status: &ServerStatus) -> bool {
-    let url = format!("http://127.0.0.1:{}/v1/models", status.port);
+    let base_url = format!("http://127.0.0.1:{}", status.port);
+    let healthy = client
+        .get(format!("{base_url}/health"))
+        .send()
+        .is_ok_and(|response| response.status() == reqwest::StatusCode::OK);
+    if !healthy {
+        return false;
+    }
+
     client
-        .get(url)
+        .get(format!("{base_url}/v1/models"))
         .send()
         .and_then(|response| response.error_for_status())
         .and_then(|response| response.json::<serde_json::Value>())
@@ -93,11 +89,21 @@ fn finish_server_start(
         }
 
         if worker_is_ready(&client, loading_status) {
+            // Register the model before publishing Ready, so an API request
+            // cannot race the gateway's worker registration.
+            register_ready_worker(app, loading_status)?;
+
             let state = app.state::<AppState>();
             let ready_status = {
                 let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
                 if !servers.matches_model(loading_status.port, &loading_status.model_id) {
                     return Ok(None);
+                }
+                if servers.process_running(loading_status.port)? != Some(true) {
+                    return Err(format!(
+                        "llama.cpp worker exited while loading: {}",
+                        loading_status.model_id
+                    ));
                 }
                 servers.mark_ready(loading_status.port)?
             };
@@ -116,27 +122,29 @@ fn finish_server_start(
 
 fn cleanup_failed_start(app: &tauri::AppHandle, loading_status: &ServerStatus, error: String) {
     let state = app.state::<AppState>();
-    let should_unregister = {
+    let was_jit = {
         let Ok(mut servers) = state.servers.lock() else {
             return;
         };
         if !servers.matches_model(loading_status.port, &loading_status.model_id) {
             return;
         }
+        let was_jit = servers.is_jit(loading_status.port);
         let _ = servers.stop(loading_status.port);
-        true
+        was_jit
     };
 
-    if should_unregister {
-        let unregister_app = app.clone();
-        let model_id = loading_status.model_id.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let state = unregister_app.state::<AppState>();
-            if let Ok(gateway) = state.gateway.lock() {
-                let _ = gateway.unregister(&model_id);
-            }
-        });
+    if was_jit {
+        crate::commands::jit::report_failure(app, &loading_status.model_id, &error);
     }
+    let unregister_app = app.clone();
+    let model_id = loading_status.model_id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = unregister_app.state::<AppState>();
+        if let Ok(gateway) = state.gateway.lock() {
+            let _ = gateway.unregister(&model_id);
+        }
+    });
 
     let _ = app.emit(
         "server-start-failed",
@@ -215,33 +223,37 @@ fn configure_gateway_now(app: &tauri::AppHandle, config: GatewayConfig) -> Resul
             .into_iter()
             .filter(|status| status.running && status.state == ServerLifecycle::Ready)
             .filter_map(|status| {
-                servers
-                    .inference_defaults(status.port)
-                    .map(|defaults| (status, defaults))
+                servers.inference_defaults(status.port).map(|defaults| {
+                    let jit = servers.is_jit(status.port);
+                    (status, defaults, jit)
+                })
             })
             .collect::<Vec<_>>()
     };
 
     let gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
-    for (worker, defaults) in workers {
-        gateway.register(&worker.model_id, worker.port, &defaults)?;
+    for (worker, defaults, jit) in workers {
+        gateway.register(&worker.model_id, worker.port, &defaults, jit)?;
     }
+    let sync_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::commands::jit::sync_catalog(&sync_app));
 
     Ok(())
 }
 
 fn register_ready_worker(app: &tauri::AppHandle, status: &ServerStatus) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let defaults = {
+    let (defaults, jit) = {
         let servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
-        servers
+        let defaults = servers
             .inference_defaults(status.port)
-            .ok_or_else(|| "missing worker inference defaults".to_string())?
+            .ok_or_else(|| "missing worker inference defaults".to_string())?;
+        (defaults, servers.is_jit(status.port))
     };
 
     let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
     if gateway.is_running() {
-        gateway.register(&status.model_id, status.port, &defaults)?;
+        gateway.register(&status.model_id, status.port, &defaults, jit)?;
     }
     Ok(())
 }
@@ -287,13 +299,21 @@ pub async fn gateway_status(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 pub async fn start_server(
     app: tauri::AppHandle,
+    config: ServerConfig,
+) -> Result<ServerStatus, String> {
+    start_server_with_origin(app, config, false).await
+}
+
+pub(crate) async fn start_server_with_origin(
+    app: tauri::AppHandle,
     mut config: ServerConfig,
+    jit: bool,
 ) -> Result<ServerStatus, String> {
     let spawn_app = app.clone();
     let (status, needs_readiness) = tauri::async_runtime::spawn_blocking(move || {
         let state = spawn_app.state::<AppState>();
 
-        config.model_id = public_model_id(&config.model_path)?;
+        config.model_id = model_id(&config.model_path)?;
 
         {
             let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
@@ -302,6 +322,9 @@ pub async fn start_server(
                 .into_iter()
                 .find(|status| status.running && status.model_id == config.model_id)
             {
+                if !jit {
+                    servers.make_manual(existing.port);
+                }
                 return Ok((existing, false));
             }
         }
@@ -316,7 +339,7 @@ pub async fn start_server(
             config.port = allocate_worker_port(public_port)?;
             let result = {
                 let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
-                servers.spawn(config.clone())
+                servers.spawn_with_origin(config.clone(), jit)
             };
             match result {
                 Ok(status) => return Ok((status, true)),
@@ -329,6 +352,14 @@ pub async fn start_server(
     .await
     .map_err(|error| error.to_string())??;
 
+    if !needs_readiness && status.state == ServerLifecycle::Ready {
+        let update_app = app.clone();
+        let current = status.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = register_ready_worker(&update_app, &current);
+        });
+    }
+
     if needs_readiness {
         let readiness_app = app.clone();
         let loading_status = status.clone();
@@ -336,7 +367,6 @@ pub async fn start_server(
             match finish_server_start(&readiness_app, &loading_status) {
                 Ok(Some(ready_status)) => {
                     let _ = readiness_app.emit("server-status-changed", ready_status.clone());
-                    let _ = register_ready_worker(&readiness_app, &ready_status);
                 }
                 Ok(None) => {}
                 Err(error) => cleanup_failed_start(&readiness_app, &loading_status, error),
@@ -447,4 +477,82 @@ pub async fn server_logs(app: tauri::AppHandle, port: u16) -> Result<Vec<String>
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+
+    fn probe_mock_worker(health_ok: bool, response_model_id: &str) -> bool {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test worker");
+        let port = listener.local_addr().expect("test worker address").port();
+        let models_body = format!(r#"{{"data":[{{"id":"{response_model_id}"}}]}}"#);
+        let requests = if health_ok { 2 } else { 1 };
+
+        let server = std::thread::spawn(move || {
+            for _ in 0..requests {
+                let (mut stream, _) = listener.accept().expect("accept readiness probe");
+                let mut request_line = String::new();
+                BufReader::new(stream.try_clone().expect("clone stream"))
+                    .read_line(&mut request_line)
+                    .expect("read readiness probe");
+
+                let (status, body) = if request_line.starts_with("GET /health ") {
+                    if health_ok {
+                        ("200 OK", r#"{"status":"ok"}"#)
+                    } else {
+                        ("503 Service Unavailable", r#"{"status":"loading model"}"#)
+                    }
+                } else {
+                    assert!(request_line.starts_with("GET /v1/models "));
+                    ("200 OK", models_body.as_str())
+                };
+
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .expect("write readiness response");
+            }
+        });
+
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .expect("test client");
+        let status = ServerStatus {
+            backend: "llama.cpp".to_string(),
+            model_path: "test.gguf".to_string(),
+            model_id: "test-model".to_string(),
+            model_name: "Test".to_string(),
+            model_category: "LLM".to_string(),
+            quantization: "F16".to_string(),
+            supports_mtp: false,
+            supports_vision: false,
+            supports_tools: false,
+            port,
+            pid: std::process::id(),
+            memory_bytes: 0,
+            running: true,
+            state: ServerLifecycle::Loading,
+        };
+
+        let ready = worker_is_ready(&client, &status);
+        server.join().expect("test worker completed");
+        ready
+    }
+
+    #[test]
+    fn loading_health_never_reports_ready_even_with_model_listed() {
+        assert!(!probe_mock_worker(false, "test-model"));
+    }
+
+    #[test]
+    fn healthy_worker_must_expose_the_requested_model() {
+        assert!(!probe_mock_worker(true, "another-model"));
+        assert!(probe_mock_worker(true, "test-model"));
+    }
 }

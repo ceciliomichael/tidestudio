@@ -36,6 +36,8 @@ pub struct ServerConfig {
     #[serde(default)]
     pub supports_vision: bool,
     #[serde(default)]
+    pub supports_tools: bool,
+    #[serde(default)]
     pub model_id: String,
     #[serde(default)]
     pub port: u16,

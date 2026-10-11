@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -34,12 +35,12 @@ func TestInferenceDefaultsAreMergedWithoutOverridingRequest(t *testing.T) {
 		ModelID: "defaults-model",
 		BaseURL: worker.URL,
 		Defaults: InferenceDefaults{
-			SystemPrompt:    "Default system prompt",
-			ThinkingEnabled: &thinking,
-			ReasoningBudget: &reasoningBudget,
+			SystemPrompt:      "Default system prompt",
+			ThinkingEnabled:   &thinking,
+			ReasoningBudget:   &reasoningBudget,
 			ReasoningPreserve: &preserveReasoning,
-			Temperature:     &temperature,
-			TopK:            &topK,
+			Temperature:       &temperature,
+			TopK:              &topK,
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -84,6 +85,92 @@ func TestInferenceDefaultsAreMergedWithoutOverridingRequest(t *testing.T) {
 	}
 	if body["thinking_budget_tokens"] != float64(1024) {
 		t.Fatalf("reasoning budget default not applied: %#v", body["thinking_budget_tokens"])
+	}
+}
+
+func TestConfiguredSystemPromptCombinesWithRequestAcrossEndpoints(t *testing.T) {
+	tests := []struct {
+		name, path, configured, request, want string
+	}{
+		{
+			name:       "chat with existing system prompt",
+			path:       "/v1/chat/completions",
+			configured: "TideStudio rules",
+			request:    `{"messages":[{"role":"system","content":"Client instructions"},{"role":"user","content":"Hi"}]}`,
+			want:       `{"messages":[{"role":"system","content":"TideStudio rules\n\nClient instructions"},{"role":"user","content":"Hi"}]}`,
+		},
+		{
+			name:       "chat without system prompt",
+			path:       "/v1/chat/completions",
+			configured: "TideStudio rules",
+			request:    `{"messages":[{"role":"user","content":"Hi"}]}`,
+			want:       `{"messages":[{"role":"system","content":"TideStudio rules"},{"role":"user","content":"Hi"}]}`,
+		},
+		{
+			name:       "chat structured system content",
+			path:       "/v1/chat/completions",
+			configured: "TideStudio rules",
+			request:    `{"messages":[{"role":"system","content":[{"type":"text","text":"Client rules"}]},{"role":"user","content":"Hi"}]}`,
+			want:       `{"messages":[{"role":"system","content":[{"type":"text","text":"TideStudio rules"},{"type":"text","text":"Client rules"}]},{"role":"user","content":"Hi"}]}`,
+		},
+		{
+			name:       "anthropic messages with string system",
+			path:       "/v1/messages",
+			configured: "TideStudio rules",
+			request:    `{"system":"Client instructions","messages":[{"role":"user","content":"Hi"}]}`,
+			want:       `{"system":"TideStudio rules\n\nClient instructions","messages":[{"role":"user","content":"Hi"}]}`,
+		},
+		{
+			name:       "anthropic structured system content",
+			path:       "/v1/messages",
+			configured: "TideStudio rules",
+			request:    `{"system":[{"type":"text","text":"Client instructions","cache_control":{"type":"ephemeral"}}]}`,
+			want:       `{"system":[{"type":"text","text":"TideStudio rules"},{"type":"text","text":"Client instructions","cache_control":{"type":"ephemeral"}}]}`,
+		},
+		{
+			name:       "anthropic count tokens",
+			path:       "/v1/messages/count_tokens",
+			configured: "TideStudio rules",
+			request:    `{"system":"Client instructions"}`,
+			want:       `{"system":"TideStudio rules\n\nClient instructions"}`,
+		},
+		{
+			name:       "responses with request instructions",
+			path:       "/v1/responses",
+			configured: "TideStudio rules",
+			request:    `{"instructions":"Client instructions","input":"Hi"}`,
+			want:       `{"instructions":"TideStudio rules\n\nClient instructions","input":"Hi"}`,
+		},
+		{
+			name:       "responses without instructions",
+			path:       "/v1/responses",
+			configured: "TideStudio rules",
+			request:    `{"input":"Hi"}`,
+			want:       `{"instructions":"TideStudio rules","input":"Hi"}`,
+		},
+		{
+			name:       "no TideStudio system prompt",
+			path:       "/v1/messages",
+			configured: "",
+			request:    `{"system":"Client instructions"}`,
+			want:       `{"system":"Client instructions"}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var payload, want map[string]any
+			if err := json.Unmarshal([]byte(tc.request), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(tc.want), &want); err != nil {
+				t.Fatal(err)
+			}
+			applySystemPrompt(payload, tc.configured, tc.path)
+			if !reflect.DeepEqual(payload, want) {
+				t.Fatalf("combined system prompt mismatch:\n got: %#v\nwant: %#v", payload, want)
+			}
+		})
 	}
 }
 

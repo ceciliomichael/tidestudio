@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Copy,
   Eye,
+  Hammer,
   Plus,
   Settings2,
   Square,
@@ -96,6 +97,12 @@ export function ServerDashboard({
       pendingModelPaths.includes(model.path) ||
       runningServers.some((server) => server.modelPath === model.path),
   );
+  const loadingModelPaths = [
+    ...pendingModelPaths,
+    ...runningServers
+      .filter((server) => server.state === "loading")
+      .map((server) => server.modelPath),
+  ];
   const reachableEndpoint = "http://localhost:" + serverSettings.port;
 
   function copyWithFeedback(value: string, target: string) {
@@ -109,20 +116,6 @@ export function ServerDashboard({
 
   function copyEndpoint() {
     copyWithFeedback(reachableEndpoint, "endpoint");
-  }
-
-  async function stopModel(modelId: string) {
-    const model = allModels.find((candidate) => candidate.id === modelId);
-    if (!model) {
-      return;
-    }
-
-    const server = runningServers.find(
-      (candidate) => candidate.modelPath === model.path,
-    );
-    if (server) {
-      await onStop(server.port);
-    }
   }
 
   return (
@@ -240,6 +233,15 @@ export function ServerDashboard({
                           <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
                         </span>
                       ) : null}
+                      {model.supportsTools ? (
+                        <span
+                          className="running-model-card__capability running-model-card__capability--tools"
+                          title="Tool-use indicators detected in the chat template or metadata; training and runtime compatibility are not verified"
+                          aria-label="Tool-use indicators detected; not verified"
+                        >
+                          <Hammer size={13} strokeWidth={1.9} aria-hidden="true" />
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="running-model-card__actions">
@@ -271,6 +273,8 @@ export function ServerDashboard({
                 const supportsMtp = model?.supportsMtp ?? server.supportsMtp;
                 const supportsVision =
                   model?.supportsVision ?? server.supportsVision;
+                const supportsTools =
+                  model?.supportsTools ?? server.supportsTools;
                 return (
                 <article
                   className={
@@ -332,6 +336,15 @@ export function ServerDashboard({
                           aria-label="Vision capable"
                         >
                           <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
+                        </span>
+                      ) : null}
+                      {supportsTools ? (
+                        <span
+                          className="running-model-card__capability running-model-card__capability--tools"
+                          title="Tool-use indicators detected in the chat template or metadata; training and runtime compatibility are not verified"
+                          aria-label="Tool-use indicators detected; not verified"
+                        >
+                          <Hammer size={13} strokeWidth={1.9} aria-hidden="true" />
                         </span>
                       ) : null}
                       <IconButton
@@ -402,10 +415,9 @@ export function ServerDashboard({
         open={loadDialogOpen}
         allModels={allModels}
         loadedModels={loadedModels}
-        pendingModelPaths={pendingModelPaths}
+        loadingModelPaths={loadingModelPaths}
         onClose={() => setLoadDialogOpen(false)}
         onLoad={(model) => void onLoadModel(model)}
-        onStop={(modelId) => void stopModel(modelId)}
       />
 
       <ServerSettingsDialog

@@ -34,6 +34,7 @@ pub fn run() {
             )
             .map_err(std::io::Error::other)?;
             core::paths::initialize_models_dir(stored.as_deref()).map_err(std::io::Error::other)?;
+            commands::jit::start_controller(app.handle().clone());
             Ok(())
         })
         .manage(AppState::default())

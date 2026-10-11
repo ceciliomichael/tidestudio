@@ -506,16 +506,43 @@ fn infer_capabilities(
         ]),
     );
 
-    let template_tools = template.contains("tool_calls")
-        || template.contains("tool_call")
-        || template.contains("tools")
-        || template.contains("function_call");
-    let metadata_tools =
-        metadata_haystack.contains("tool") || metadata_haystack.contains("function");
-    let tag_tools = tag_haystack.contains("tool-use") || tag_haystack.contains("function-calling");
+    // A bare `tools` reference is not enough: templates can mention tools
+    // without implementing a tool-call turn or tool-response formatting.
+    let template_tools = ["tool_calls", "tool_call", "function_call", "tool_use"]
+        .iter()
+        .any(|marker| template.contains(marker))
+        || (template.contains("tools")
+            && [
+                "role == 'tool'",
+                "role=='tool'",
+                "role == \"tool\"",
+                "role==\"tool\"",
+                "<|tool|>",
+                "<tool_response>",
+            ]
+            .iter()
+            .any(|marker| template.contains(marker)));
+    let metadata_tools = [
+        "tool_calls",
+        "tool_call",
+        "tool_use",
+        "tool-use",
+        "tool-calling",
+        "function_call",
+        "function-calling",
+    ]
+    .iter()
+    .any(|marker| metadata_haystack.contains(marker));
+    let tag_tools = tag_haystack.contains("tool-use")
+        || tag_haystack.contains("tool-calling")
+        || tag_haystack.contains("function-calling");
     let tools = capability_signal(
-        template_tools || metadata_tools || tag_tools,
-        if template_tools { "high" } else { "medium" },
+        category == "LLM" && (template_tools || metadata_tools || tag_tools),
+        if template_tools || metadata_tools {
+            "high"
+        } else {
+            "medium"
+        },
         evidence([
             (
                 template_tools,
@@ -773,6 +800,77 @@ mod tests {
         io::Write,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn tool_capability_requires_specific_template_or_metadata_evidence() {
+        let inspect = |template: &str, metadata: &[String]| {
+            infer_capabilities(
+                Some("qwen3"),
+                Some("Example Chat Model"),
+                Some(template),
+                metadata,
+                CapabilityHints {
+                    repo_id: "example/chat",
+                    filename: "chat-q4_k_m.gguf",
+                    tags: &[],
+                    pipeline_tag: None,
+                },
+            )
+            .tools
+        };
+
+        assert!(!inspect("{{ tools }}", &[]).supported);
+        assert!(
+            !inspect(
+                "normal conversation",
+                &["general.functionality=chat".into()]
+            )
+            .supported
+        );
+
+        let explicit_calls = inspect("{{ tools }} {{ message.tool_calls }}", &[]);
+        assert!(explicit_calls.supported);
+        assert_eq!(explicit_calls.confidence, "high");
+
+        let tool_role = inspect(
+            "{% if message.role == 'tool' %}{{ message.content }}{% endif %} {{ tools }}",
+            &[],
+        );
+        assert!(tool_role.supported);
+
+        let metadata = inspect("normal conversation", &["general.tool_use=true".into()]);
+        assert!(metadata.supported);
+        assert_eq!(metadata.confidence, "high");
+    }
+
+    #[test]
+    fn tool_capability_from_repository_tags_is_unverified_and_llm_only() {
+        let tags = vec!["tool-use".to_string()];
+        let hints = CapabilityHints {
+            repo_id: "example/chat",
+            filename: "chat.gguf",
+            tags: &tags,
+            pipeline_tag: None,
+        };
+        let llm = infer_capabilities(Some("llama"), Some("Chat Model"), None, &[], hints);
+        assert!(llm.tools.supported);
+        assert_eq!(llm.tools.confidence, "medium");
+
+        let non_llm = infer_capabilities(
+            Some("modern-bert"),
+            Some("Embedding Model"),
+            Some("tool_calls"),
+            &[],
+            CapabilityHints {
+                repo_id: "example/embedding",
+                filename: "embed.gguf",
+                tags: &tags,
+                pipeline_tag: Some("feature-extraction"),
+            },
+        );
+        assert_eq!(non_llm.category, "Embedding");
+        assert!(!non_llm.tools.supported);
+    }
 
     #[test]
     fn inspects_capabilities_from_metadata_without_tensor_data() {

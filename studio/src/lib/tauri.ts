@@ -29,6 +29,7 @@ export type ModelInfo = {
   supportsReasoningEffort: boolean;
   supportsReasoningPreserve: boolean;
   supportsVision: boolean;
+  supportsTools: boolean;
 };
 
 export type ServerConfig = ModelConfig & {
@@ -42,6 +43,7 @@ export type ServerConfig = ModelConfig & {
   supportsReasoningPreserve: boolean;
   supportsMtp: boolean;
   supportsVision: boolean;
+  supportsTools: boolean;
 };
 
 export type ServerStatus = {
@@ -53,6 +55,7 @@ export type ServerStatus = {
   quantization: string;
   supportsMtp: boolean;
   supportsVision: boolean;
+  supportsTools: boolean;
   port: number;
   pid: number;
   memoryBytes: number;
@@ -73,6 +76,10 @@ export type GatewayConfig = {
   apiKeyEnabled: boolean;
   apiKey: string;
   corsEnabled: boolean;
+  jitModelLoading: boolean;
+  autoUnloadJitModels: boolean;
+  maxIdleTtlMinutes: number;
+  onlyKeepLastJitModel: boolean;
 };
 
 export type ModelsDirectoryInfo = {

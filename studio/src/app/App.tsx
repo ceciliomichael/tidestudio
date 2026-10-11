@@ -130,6 +130,7 @@ function modelInfoToCatalog(model: ModelInfo): CatalogModel {
     supportsReasoningEffort: model.supportsReasoningEffort,
     supportsReasoningPreserve: model.supportsReasoningPreserve,
     supportsVision: model.supportsVision,
+    supportsTools: model.supportsTools,
   };
 }
 
@@ -174,6 +175,7 @@ function runtimeCatalogModel(server: ServerStatus): CatalogModel {
     supportsReasoningEffort: false,
     supportsReasoningPreserve: false,
     supportsVision: server.supportsVision,
+    supportsTools: server.supportsTools,
   };
 }
 
@@ -766,6 +768,7 @@ export function App({ initialPanelPreferences }: AppProps) {
       supportsReasoningPreserve: model.supportsReasoningPreserve,
       supportsMtp: model.supportsMtp,
       supportsVision: model.supportsVision,
+      supportsTools: model.supportsTools,
       ...modelConfig,
       speculativeMode:
         model.category !== "LLM"

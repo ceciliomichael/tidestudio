@@ -87,11 +87,12 @@ func (s *Server) decisions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	worker, ok := s.registry.Resolve(request.Model)
-	if !ok {
-		apiError(w, http.StatusNotFound, false, "model is not loaded")
+	worker, release, status, message := s.acquire(r.Context(), request.Model)
+	if status != 0 {
+		apiError(w, status, false, message)
 		return
 	}
+	defer release()
 
 	state, err := translateDecisionInput(request.Input)
 	if err != nil {

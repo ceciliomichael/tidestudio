@@ -24,6 +24,7 @@ pub struct ServerStatus {
     pub quantization: String,
     pub supports_mtp: bool,
     pub supports_vision: bool,
+    pub supports_tools: bool,
     pub port: u16,
     pub pid: u32,
     pub memory_bytes: u64,
@@ -42,6 +43,7 @@ fn process_memory_bytes(pid: u32) -> u64 {
 }
 
 struct RegisteredServer {
+    jit: bool,
     backend: String,
     model_path: String,
     model_id: String,
@@ -50,6 +52,7 @@ struct RegisteredServer {
     quantization: String,
     supports_mtp: bool,
     supports_vision: bool,
+    supports_tools: bool,
     inference_defaults: InferenceDefaults,
     state: ServerLifecycle,
     instance: Box<dyn ManagedInference>,
@@ -69,6 +72,14 @@ impl ServerRegistry {
     }
 
     pub fn spawn(&mut self, config: ServerConfig) -> Result<ServerStatus, String> {
+        self.spawn_with_origin(config, false)
+    }
+
+    pub fn spawn_with_origin(
+        &mut self,
+        config: ServerConfig,
+        jit: bool,
+    ) -> Result<ServerStatus, String> {
         if let Some(existing) = self.servers.get_mut(&config.port) {
             if existing.instance.is_running()? {
                 return Err(format!(
@@ -88,6 +99,7 @@ impl ServerRegistry {
         let quantization = config.quantization.clone();
         let supports_mtp = config.supports_mtp;
         let supports_vision = config.supports_vision;
+        let supports_tools = config.supports_tools;
         let inference_defaults = InferenceDefaults::from(&config);
         let port = config.port;
         let instance = self.backend.start(&config)?;
@@ -100,6 +112,7 @@ impl ServerRegistry {
             quantization: quantization.clone(),
             supports_mtp,
             supports_vision,
+            supports_tools,
             port,
             pid: instance.pid(),
             memory_bytes: 0,
@@ -110,6 +123,7 @@ impl ServerRegistry {
         self.servers.insert(
             port,
             RegisteredServer {
+                jit,
                 backend,
                 model_path,
                 model_id,
@@ -118,6 +132,7 @@ impl ServerRegistry {
                 quantization,
                 supports_mtp,
                 supports_vision,
+                supports_tools,
                 inference_defaults,
                 state: ServerLifecycle::Loading,
                 instance,
@@ -147,6 +162,22 @@ impl ServerRegistry {
         self.servers
             .get(&port)
             .is_some_and(|server| server.model_id == model_id)
+    }
+
+    pub fn is_jit(&self, port: u16) -> bool {
+        self.servers.get(&port).is_some_and(|server| server.jit)
+    }
+
+    pub fn make_manual(&mut self, port: u16) {
+        if let Some(server) = self.servers.get_mut(&port) {
+            server.jit = false;
+        }
+    }
+
+    pub fn jit_port(&self, model_id: &str) -> Option<u16> {
+        self.servers.iter().find_map(|(port, server)| {
+            (server.model_id == model_id && server.jit).then_some(*port)
+        })
     }
 
     pub fn contains_model_path(&self, model_path: &str) -> bool {
@@ -192,6 +223,7 @@ impl ServerRegistry {
             quantization: server.quantization,
             supports_mtp: server.supports_mtp,
             supports_vision: server.supports_vision,
+            supports_tools: server.supports_tools,
             port,
             pid,
             memory_bytes: process_memory_bytes(pid),
@@ -244,6 +276,7 @@ impl ServerRegistry {
             quantization: server.quantization.clone(),
             supports_mtp: server.supports_mtp,
             supports_vision: server.supports_vision,
+            supports_tools: server.supports_tools,
             port,
             pid,
             memory_bytes: if server.state == ServerLifecycle::Ready && running {
@@ -320,6 +353,7 @@ mod tests {
             supports_reasoning_preserve: false,
             supports_mtp: false,
             supports_vision: true,
+            supports_tools: true,
             model_id: "model".to_string(),
             port: 32123,
             context_size: None,
@@ -362,6 +396,7 @@ mod tests {
         assert_eq!(loading.model_category, "DECISION");
         assert_eq!(loading.quantization, "F16");
         assert!(loading.supports_vision);
+        assert!(loading.supports_tools);
 
         let listed = registry.list().expect("worker should list");
         assert_eq!(listed.len(), 1);
@@ -378,5 +413,6 @@ mod tests {
         assert_eq!(ready.model_name, "Laya");
         assert_eq!(ready.model_category, "DECISION");
         assert_eq!(ready.quantization, "F16");
+        assert!(ready.supports_tools);
     }
 }

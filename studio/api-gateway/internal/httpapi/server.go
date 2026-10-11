@@ -9,12 +9,14 @@ import (
 type Server struct {
 	cfg      Config
 	registry *Registry
+	jit      *JITManager
 }
 
 func New(cfg Config) http.Handler {
 	return &Server{
 		cfg:      cfg,
 		registry: NewRegistry(),
+		jit:      newJITManager(),
 	}
 }
 
@@ -48,12 +50,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/models":
 		workers := s.registry.List()
 		data := make([]any, 0, len(workers))
+		seen := make(map[string]bool)
 		for _, worker := range workers {
+			seen[worker.ModelID] = true
 			data = append(data, map[string]any{
 				"id":       worker.ModelID,
 				"object":   "model",
 				"owned_by": "tidestudio",
 			})
+		}
+		if s.cfg.JITModelLoading {
+			s.jit.mu.Lock()
+			for id := range s.jit.installed {
+				if !seen[id] {
+					data = append(data, map[string]any{"id": id, "object": "model", "owned_by": "tidestudio"})
+				}
+			}
+			s.jit.mu.Unlock()
 		}
 		sendJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 

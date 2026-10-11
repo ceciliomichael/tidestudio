@@ -164,6 +164,9 @@ fn scan_directory(
             supports_vision: inspection
                 .as_ref()
                 .is_some_and(|value| value.capabilities.vision.supported),
+            supports_tools: inspection
+                .as_ref()
+                .is_some_and(|value| value.capabilities.tools.supported),
         });
     }
 

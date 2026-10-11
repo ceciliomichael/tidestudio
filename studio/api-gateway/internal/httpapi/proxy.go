@@ -32,11 +32,12 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, anthropic bool) {
 		return
 	}
 
-	worker, ok := s.registry.Resolve(model)
-	if !ok {
-		apiError(w, http.StatusNotFound, anthropic, "model is not loaded")
+	worker, release, status, message := s.acquire(r.Context(), model)
+	if status != 0 {
+		apiError(w, status, anthropic, message)
 		return
 	}
+	defer release()
 
 	applyInferenceDefaults(payload, worker.Defaults, r.URL.Path)
 	raw, err = json.Marshal(payload)
@@ -107,19 +108,43 @@ func applySystemPrompt(payload map[string]any, systemPrompt, path string) {
 		for _, item := range messages {
 			message, ok := item.(map[string]any)
 			if ok && message["role"] == "system" {
-				return
+				if merged, valid := combineSystemContent(systemPrompt, message["content"]); valid {
+					message["content"] = merged
+					return
+				}
+				break
 			}
 		}
 		payload["messages"] = append(
 			[]any{map[string]any{"role": "system", "content": systemPrompt}},
 			messages...,
 		)
-	case "/v1/messages":
-		setIfMissing(payload, "system", systemPrompt)
-	case "/v1/messages/count_tokens":
-		setIfMissing(payload, "system", systemPrompt)
+	case "/v1/messages", "/v1/messages/count_tokens":
+		if merged, valid := combineSystemContent(systemPrompt, payload["system"]); valid {
+			payload["system"] = merged
+		}
 	case "/v1/responses":
-		setIfMissing(payload, "instructions", systemPrompt)
+		if merged, valid := combineSystemContent(systemPrompt, payload["instructions"]); valid {
+			payload["instructions"] = merged
+		}
+	}
+}
+
+// Keep the TideStudio prompt first without dropping request-provided text or
+// structured system blocks. Unsupported content shapes stay untouched.
+func combineSystemContent(configured string, requested any) (any, bool) {
+	switch content := requested.(type) {
+	case nil:
+		return configured, true
+	case string:
+		if content == "" {
+			return configured, true
+		}
+		return configured + "\n\n" + content, true
+	case []any:
+		return append([]any{map[string]any{"type": "text", "text": configured}}, content...), true
+	default:
+		return nil, false
 	}
 }
 

@@ -55,7 +55,8 @@ export function ServerSettingsDialog({
   const ttlValid =
     ttlInput.trim() !== "" &&
     Number.isInteger(parsedTtl) &&
-    parsedTtl >= 1;
+    parsedTtl >= 1 &&
+    parsedTtl <= 525600;
   const apiKeyValid = !draft.apiKeyEnabled || draft.apiKey.trim() !== "";
   const canApply = portValid && ttlValid && apiKeyValid;
 
@@ -190,6 +191,7 @@ export function ServerSettingsDialog({
               <Switch
                 className="tide-switch"
                 checked={draft.autoUnloadJitModels}
+                disabled={!draft.jitModelLoading}
                 label="Auto unload unused JIT loaded models"
                 onChange={(autoUnloadJitModels) =>
                   update({ autoUnloadJitModels })
@@ -210,6 +212,8 @@ export function ServerSettingsDialog({
                 type="number"
                 min={1}
                 value={ttlInput}
+                max={525600}
+                disabled={!draft.jitModelLoading || !draft.autoUnloadJitModels}
                 aria-label="Maximum idle TTL in minutes"
                 onChange={(event) => setTtlInput(event.target.value)}
               />
@@ -223,6 +227,7 @@ export function ServerSettingsDialog({
               <Switch
                 className="tide-switch"
                 checked={draft.onlyKeepLastJitModel}
+                disabled={!draft.jitModelLoading}
                 label="Only keep last JIT loaded model"
                 onChange={(onlyKeepLastJitModel) =>
                   update({ onlyKeepLastJitModel })

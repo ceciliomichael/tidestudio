@@ -10,6 +10,7 @@ type Worker struct {
 	ModelID  string            `json:"model_id"`
 	BaseURL  string            `json:"base_url"`
 	Defaults InferenceDefaults `json:"defaults"`
+	JIT      bool              `json:"jit"`
 }
 
 type InferenceDefaults struct {

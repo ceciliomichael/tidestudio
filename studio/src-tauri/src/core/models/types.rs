@@ -21,4 +21,5 @@ pub struct ModelInfo {
     pub supports_reasoning_effort: bool,
     pub supports_reasoning_preserve: bool,
     pub supports_vision: bool,
+    pub supports_tools: bool,
 }
