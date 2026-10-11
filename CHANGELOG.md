@@ -14,6 +14,7 @@ All notable changes to TideStudio will be documented here.
 
 ### Changed
 
+- Windows release packaging now uses faster NSIS zlib compression to reduce setup build time for the bundled CUDA runtime.
 - Load Model is now available immediately during startup model discovery instead of appearing disabled until the GGUF metadata scan completes.
 - TideStudio restores the last completed local-model catalog and load settings from SQLite at startup, then refreshes them from disk in the background.
 - The Load Model table now keeps Size on the far-right edge, with loaded-model Stop actions positioned before it.
