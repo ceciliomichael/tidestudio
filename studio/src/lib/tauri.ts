@@ -20,6 +20,12 @@ export type ModelInfo = {
   architecture: string | null;
   parameters: string | null;
   contextLength: number | null;
+  gpuLayerCount: number | null;
+  embeddingLength: number | null;
+  attentionHeadCount: number | null;
+  attentionHeadCountKv: number | null;
+  attentionKeyLength: number | null;
+  attentionValueLength: number | null;
   poolingType: string | null;
   quantization: string | null;
   chatTemplate: string | null;

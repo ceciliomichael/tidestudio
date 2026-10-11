@@ -5,6 +5,7 @@ import {
   MessageSquareText,
   Workflow,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { CollapsibleSection } from "../../components/ui/CollapsibleSection";
 import {
   Dropdown,
@@ -18,6 +19,7 @@ import type {
   ModelConfig,
   SpeculativeMode,
 } from "../../lib/config";
+import { gpuLayerMaximum, normalizedGpuLayers } from "./modelMemory";
 import { compatibleDraftModels, type CatalogModel } from "./types";
 
 type Props = {
@@ -34,6 +36,11 @@ const EMBEDDING_POOLING_OPTIONS: DropdownOption<EmbeddingPooling>[] = [
   { label: "CLS", value: "cls" },
   { label: "Last token", value: "last" },
 ];
+
+function rangeProgressStyle(value: number, max: number): CSSProperties {
+  const progress = Math.min(100, Math.max(0, (value / Math.max(1, max)) * 100));
+  return { "--range-progress": `${progress}%` } as CSSProperties;
+}
 
 export function ModelLoadTab({
   model,
@@ -64,6 +71,8 @@ export function ModelLoadTab({
     config.speculativeMode === "mtp" && !model.supportsMtp
       ? "none"
       : config.speculativeMode;
+  const gpuMax = gpuLayerMaximum(model);
+  const displayedGpuLayers = normalizedGpuLayers(model, config.gpuLayers);
   const compatibleDrafts = compatibleDraftModels(model, availableModels);
   const selectedDraftIsCompatible = compatibleDrafts.some(
     (candidate) => candidate.path === config.draftModelPath,
@@ -151,15 +160,34 @@ export function ModelLoadTab({
             layout="inline"
             compact
             type="number"
-            value={config.gpuLayers ?? ""}
+            min={0}
+            max={gpuMax}
+            value={displayedGpuLayers ?? ""}
             onChange={(event) =>
               update({
                 gpuLayers: event.target.value
-                  ? Number(event.target.value)
+                  ? normalizedGpuLayers(model, Number(event.target.value))
                   : null,
               })
             }
           />
+          <input
+            className="model-load__range"
+            aria-label="GPU Offload slider"
+            type="range"
+            min={0}
+            max={gpuMax}
+            value={Math.max(0, displayedGpuLayers ?? 0)}
+            style={rangeProgressStyle(Math.max(0, displayedGpuLayers ?? 0), gpuMax)}
+            onChange={(event) =>
+              update({ gpuLayers: Number(event.target.value) })
+            }
+          />
+          <p className="inspector-control-hint model-load__gpu-layer-hint">
+            {model.gpuLayerCount !== null
+              ? `0–${model.gpuLayerCount.toLocaleString()} model layers`
+              : "Layer metadata unavailable; using a fallback slider range"}
+          </p>
 
           <div className="inspector-control-row">
             <span>Flash Attention</span>

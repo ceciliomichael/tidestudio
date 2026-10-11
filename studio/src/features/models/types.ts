@@ -10,6 +10,13 @@ export type CatalogModel = {
   parameters: string;
   contextLength: string;
   contextTokens: number | null;
+  sizeBytes: number;
+  gpuLayerCount: number | null;
+  embeddingLength: number | null;
+  attentionHeadCount: number | null;
+  attentionHeadCountKv: number | null;
+  attentionKeyLength: number | null;
+  attentionValueLength: number | null;
   poolingType: string | null;
   quantization: string;
   size: string;

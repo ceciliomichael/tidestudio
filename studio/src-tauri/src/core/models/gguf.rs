@@ -36,6 +36,12 @@ pub struct GgufInspection {
     pub model_name: Option<String>,
     pub parameter_size: Option<String>,
     pub context_length: Option<u64>,
+    pub gpu_layer_count: Option<u64>,
+    pub embedding_length: Option<u64>,
+    pub attention_head_count: Option<u64>,
+    pub attention_head_count_kv: Option<u64>,
+    pub attention_key_length: Option<u64>,
+    pub attention_value_length: Option<u64>,
     pub pooling_type: Option<String>,
     pub chat_template: Option<String>,
     pub tokenizer_fingerprint: Option<String>,
@@ -74,6 +80,12 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
     let mut parameter_size = None;
     let mut parameter_count = None;
     let mut context_length = None;
+    let mut gpu_layer_count = None;
+    let mut embedding_length = None;
+    let mut attention_head_count = None;
+    let mut attention_head_count_kv = None;
+    let mut attention_key_length = None;
+    let mut attention_value_length = None;
     let mut expert_count = None;
     let mut pooling_type = None;
     let mut chat_template = None;
@@ -91,6 +103,12 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
             || lower_key == "general.parameter_count"
             || lower_key == "general.tags"
             || lower_key.ends_with(".context_length")
+            || lower_key.ends_with(".block_count")
+            || lower_key.ends_with(".embedding_length")
+            || lower_key.ends_with(".attention.head_count")
+            || lower_key.ends_with(".attention.head_count_kv")
+            || lower_key.ends_with(".attention.key_length")
+            || lower_key.ends_with(".attention.value_length")
             || lower_key.ends_with(".expert_count")
             || lower_key == "laya.max_len"
             || lower_key.contains("chat_template")
@@ -119,6 +137,40 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
             _ if lower_key.ends_with(".context_length") || lower_key == "laya.max_len" => {
                 if context_length.is_none() {
                     context_length = value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".block_count") => {
+                if gpu_layer_count.is_none() {
+                    gpu_layer_count = value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".embedding_length") => {
+                if embedding_length.is_none() {
+                    embedding_length = value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".attention.head_count_kv") => {
+                if attention_head_count_kv.is_none() {
+                    attention_head_count_kv =
+                        value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".attention.head_count") => {
+                if attention_head_count.is_none() {
+                    attention_head_count =
+                        value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".attention.key_length") => {
+                if attention_key_length.is_none() {
+                    attention_key_length =
+                        value.as_deref().and_then(|value| value.parse::<u64>().ok());
+                }
+            }
+            _ if lower_key.ends_with(".attention.value_length") => {
+                if attention_value_length.is_none() {
+                    attention_value_length =
+                        value.as_deref().and_then(|value| value.parse::<u64>().ok());
                 }
             }
             _ if lower_key.ends_with(".expert_count") => {
@@ -187,6 +239,12 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         model_name,
         parameter_size,
         context_length,
+        gpu_layer_count,
+        embedding_length,
+        attention_head_count,
+        attention_head_count_kv,
+        attention_key_length,
+        attention_value_length,
         pooling_type,
         chat_template,
         tokenizer_fingerprint,
@@ -1234,6 +1292,53 @@ mod tests {
 
         assert_eq!(inspection.parameter_size.as_deref(), Some("64x1.2B"));
         assert_eq!(inspection.context_length, Some(32_768));
+
+        fs::remove_file(path).expect("remove test gguf");
+    }
+
+    #[test]
+    fn reads_gpu_layer_and_attention_memory_metadata() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tidestudio-memory-{unique}.gguf"));
+        let mut file = File::create(&path).expect("create test gguf");
+
+        file.write_all(b"GGUF").expect("magic");
+        file.write_all(&3_u32.to_le_bytes()).expect("version");
+        file.write_all(&0_u64.to_le_bytes()).expect("tensor count");
+        file.write_all(&8_u64.to_le_bytes())
+            .expect("metadata count");
+
+        write_string_metadata(&mut file, "general.architecture", "qwen3");
+        write_u32_metadata(&mut file, "qwen3.block_count", 28);
+        write_u32_metadata(&mut file, "qwen3.embedding_length", 3584);
+        write_u32_metadata(&mut file, "qwen3.attention.head_count", 28);
+        write_u32_metadata(&mut file, "qwen3.attention.head_count_kv", 4);
+        write_u32_metadata(&mut file, "qwen3.attention.key_length", 128);
+        write_u32_metadata(&mut file, "qwen3.attention.value_length", 128);
+        write_u32_metadata(&mut file, "qwen3.context_length", 131_072);
+        drop(file);
+
+        let inspection = inspect_gguf(
+            &path,
+            CapabilityHints {
+                repo_id: "example/qwen3",
+                filename: "model.gguf",
+                tags: &[],
+                pipeline_tag: None,
+            },
+        )
+        .expect("inspect memory metadata gguf");
+
+        assert_eq!(inspection.gpu_layer_count, Some(28));
+        assert_eq!(inspection.embedding_length, Some(3584));
+        assert_eq!(inspection.attention_head_count, Some(28));
+        assert_eq!(inspection.attention_head_count_kv, Some(4));
+        assert_eq!(inspection.attention_key_length, Some(128));
+        assert_eq!(inspection.attention_value_length, Some(128));
+        assert_eq!(inspection.context_length, Some(131_072));
 
         fs::remove_file(path).expect("remove test gguf");
     }

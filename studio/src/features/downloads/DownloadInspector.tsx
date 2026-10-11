@@ -294,6 +294,8 @@ function DownloadOptionSelector({
       <div className="download-option-card__selector">
         <Dropdown
           ariaLabel="Choose GGUF file"
+          menuClassName="ui-dropdown__menu--download"
+          maxMenuHeight={260}
           value={file.filename}
           options={files.map((candidate) => ({
             value: candidate.filename,

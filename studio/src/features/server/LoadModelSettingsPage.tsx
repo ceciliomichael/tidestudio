@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Button } from "../../components/ui/Button";
 import { Dropdown, type DropdownOption } from "../../components/ui/Dropdown";
 import { InputField } from "../../components/ui/InputField";
@@ -8,6 +8,12 @@ import type {
   ModelConfig,
   SpeculativeMode,
 } from "../../lib/config";
+import {
+  estimateModelMemory,
+  formatMemoryBytes,
+  gpuLayerMaximum,
+  normalizedGpuLayers,
+} from "../models/modelMemory";
 import { compatibleDraftModels, type CatalogModel } from "../models/types";
 
 type Props = {
@@ -175,6 +181,12 @@ function nearestStep(steps: number[], value: number): number {
   );
 }
 
+function rangeProgressStyle(value: number, min: number, max: number): CSSProperties {
+  const span = Math.max(1, max - min);
+  const progress = Math.min(100, Math.max(0, ((value - min) / span) * 100));
+  return { "--range-progress": `${progress}%` } as CSSProperties;
+}
+
 export function LoadModelSettingsPage({
   model,
   availableModels,
@@ -191,7 +203,8 @@ export function LoadModelSettingsPage({
   const isDrafter = model.category === "Drafter";
   const contextMax = Math.max(4096, model.contextTokens ?? 0, config.contextSize ?? 0);
   const contextOptions = useMemo(() => contextSteps(contextMax), [contextMax]);
-  const gpuMax = Math.max(128, config.gpuLayers ?? 0);
+  const gpuMax = gpuLayerMaximum(model);
+  const displayedGpuLayers = normalizedGpuLayers(model, config.gpuLayers);
 
   const speculativeOptions: DropdownOption<SpeculativeMode>[] = [
     { label: "Disabled", value: "none" },
@@ -216,6 +229,13 @@ export function LoadModelSettingsPage({
       badge: candidate.category === "Drafter" ? "Drafter" : candidate.quantization,
     })),
   ];
+  const selectedDraftModel = compatibleDrafts.find(
+    (candidate) => candidate.path === config.draftModelPath,
+  );
+  const memoryEstimate = estimateModelMemory(model, {
+    ...config,
+    gpuLayers: displayedGpuLayers,
+  }, selectedDraftModel);
 
   function update(patch: Partial<ModelConfig>) {
     onChange({ ...config, ...patch });
@@ -285,6 +305,21 @@ export function LoadModelSettingsPage({
           }
         }}
       >
+        <div className="load-model-settings__memory-card">
+          <div className="load-model-settings__memory-title">
+            <strong>Estimated Memory Usage</strong>
+            <span>Beta</span>
+          </div>
+          <div className="load-model-settings__memory-values">
+            <span>
+              GPU <strong>{formatMemoryBytes(memoryEstimate.gpuBytes)}</strong>
+            </span>
+            <span>
+              Total <strong>{formatMemoryBytes(memoryEstimate.totalBytes)}</strong>
+            </span>
+          </div>
+        </div>
+
         <section className="load-model-settings__section">
           <div className="load-model-settings__field">
             <label className="load-model-settings__field-main">
@@ -298,8 +333,10 @@ export function LoadModelSettingsPage({
               />
             </label>
             {model.contextTokens ? (
-              <p className="load-model-settings__hint">
-                Model supports up to {model.contextTokens.toLocaleString()} tokens
+              <p className="load-model-settings__context-support">
+                <span>Model supports up to</span>
+                <strong>{model.contextTokens.toLocaleString()}</strong>
+                <span>tokens</span>
               </p>
             ) : null}
             <input
@@ -309,6 +346,11 @@ export function LoadModelSettingsPage({
               min={0}
               max={contextOptions.length - 1}
               value={nearestStep(contextOptions, config.contextSize ?? 4096)}
+              style={rangeProgressStyle(
+                nearestStep(contextOptions, config.contextSize ?? 4096),
+                0,
+                contextOptions.length - 1,
+              )}
               onChange={(event) =>
                 updateNumeric("contextSize", contextOptions[Number(event.target.value)])
               }
@@ -320,9 +362,12 @@ export function LoadModelSettingsPage({
               <span>GPU Offload</span>
               <NumberValueInput
                 min={0}
-                value={config.gpuLayers}
+                max={gpuMax}
+                value={displayedGpuLayers}
                 placeholder="Auto"
-                onChange={(value) => updateNumeric("gpuLayers", value)}
+                onChange={(value) =>
+                  updateNumeric("gpuLayers", normalizedGpuLayers(model, value))
+                }
               />
             </label>
             <input
@@ -331,7 +376,12 @@ export function LoadModelSettingsPage({
               type="range"
               min={0}
               max={gpuMax}
-              value={Math.max(0, config.gpuLayers ?? 0)}
+              value={Math.max(0, displayedGpuLayers ?? 0)}
+              style={rangeProgressStyle(
+                Math.max(0, displayedGpuLayers ?? 0),
+                0,
+                gpuMax,
+              )}
               onChange={(event) =>
                 updateNumeric("gpuLayers", Number(event.target.value))
               }

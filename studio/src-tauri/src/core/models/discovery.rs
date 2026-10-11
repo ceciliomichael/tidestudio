@@ -139,6 +139,20 @@ fn scan_directory(
                 .as_ref()
                 .and_then(|value| value.parameter_size.clone()),
             context_length: inspection.as_ref().and_then(|value| value.context_length),
+            gpu_layer_count: inspection.as_ref().and_then(|value| value.gpu_layer_count),
+            embedding_length: inspection.as_ref().and_then(|value| value.embedding_length),
+            attention_head_count: inspection
+                .as_ref()
+                .and_then(|value| value.attention_head_count),
+            attention_head_count_kv: inspection
+                .as_ref()
+                .and_then(|value| value.attention_head_count_kv),
+            attention_key_length: inspection
+                .as_ref()
+                .and_then(|value| value.attention_key_length),
+            attention_value_length: inspection
+                .as_ref()
+                .and_then(|value| value.attention_value_length),
             pooling_type: inspection
                 .as_ref()
                 .and_then(|value| value.pooling_type.clone()),
