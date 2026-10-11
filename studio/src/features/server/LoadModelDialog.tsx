@@ -35,6 +35,7 @@ function sizeValue(value: string) {
 type Props = {
   open: boolean;
   allModels: CatalogModel[];
+  modelsReady: boolean;
   loadedModels: CatalogModel[];
   servers: ServerStatus[];
   configs: Record<string, ModelConfig>;
@@ -46,6 +47,7 @@ type Props = {
 export function LoadModelDialog({
   open,
   allModels,
+  modelsReady,
   loadedModels,
   servers,
   configs,
@@ -216,10 +218,16 @@ export function LoadModelDialog({
                 <span>Params</span>
                 <span>Architecture</span>
                 <span>Type</span>
-                <span>Size</span>
                 <span aria-label="Actions" />
+                <span className="load-model-dialog__catalog-size">Size</span>
               </div>
-              {filteredModels.map((model) => {
+              {filteredModels.length === 0 ? (
+                <div className="load-model-dialog__catalog-empty">
+                  {modelsReady
+                    ? "No local GGUF models found."
+                    : "Loading local models..."}
+                </div>
+              ) : filteredModels.map((model) => {
                 const loaded = loadedIds.has(model.id);
                 const server = servers.find(
                   (candidate) => candidate.running && candidate.modelPath === model.path,
@@ -292,7 +300,6 @@ export function LoadModelDialog({
                     <span>{model.parameters}</span>
                     <span>{model.architecture}</span>
                     <span className="load-model-dialog__catalog-type">{model.category}</span>
-                    <span>{model.size}</span>
                     <span className="load-model-dialog__catalog-action">
                       {loaded ? (
                         <Button
@@ -311,6 +318,7 @@ export function LoadModelDialog({
                         </Button>
                       ) : null}
                     </span>
+                    <span className="load-model-dialog__catalog-size">{model.size}</span>
                   </div>
                 );
               })}

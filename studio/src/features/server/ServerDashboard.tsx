@@ -29,6 +29,7 @@ type Props = {
   logs: string[];
   selectedPort: number | null;
   allModels: CatalogModel[];
+  modelsReady: boolean;
   configs: Record<string, ModelConfig>;
   serverSettings: ServerSettings;
   gatewayRunning: boolean;
@@ -65,6 +66,7 @@ export function ServerDashboard({
   logs,
   selectedPort,
   allModels,
+  modelsReady,
   configs,
   serverSettings,
   gatewayRunning,
@@ -157,7 +159,7 @@ export function ServerDashboard({
           <Button
             variant="primary"
             size="compact"
-            disabled={allModels.length === 0}
+            disabled={modelsReady && allModels.length === 0}
             onClick={() => setLoadDialogOpen(true)}
           >
             <Plus size={13} strokeWidth={2} aria-hidden="true" />
@@ -408,6 +410,7 @@ export function ServerDashboard({
       <LoadModelDialog
         open={loadDialogOpen}
         allModels={allModels}
+        modelsReady={modelsReady}
         loadedModels={loadedModels}
         servers={runningServers}
         configs={configs}

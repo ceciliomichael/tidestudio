@@ -61,6 +61,12 @@ function modelSearchCacheKey(source: ModelSearchSource) {
 
 const LEGACY_HUGGING_FACE_CACHE_KEY = "model_search.default_results.v2";
 const SERVER_SETTINGS_PREFERENCE_KEY = "server.settings.v1";
+const LOCAL_MODEL_CATALOG_CACHE_KEY = "models.catalog.v1";
+
+type LocalModelCatalogCache = {
+  models: ModelInfo[];
+  configs: Record<string, ModelConfig>;
+};
 import {
   NavigationPanel,
   type ActivePage,
@@ -207,6 +213,7 @@ export function App({ initialPanelPreferences }: AppProps) {
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const { appearance, language, changeAppearance, changeLanguage } = useAppearancePreferences();
   const [localModels, setLocalModels] = useState<CatalogModel[]>([]);
+  const [localModelsReady, setLocalModelsReady] = useState(false);
   const [modelsDirectory, setModelsDirectoryInfo] =
     useState<ModelsDirectoryInfo | null>(null);
   const [modelsDirectoryBusy, setModelsDirectoryBusy] = useState(false);
@@ -295,7 +302,10 @@ export function App({ initialPanelPreferences }: AppProps) {
     : null;
 
   useEffect(() => {
-    void refreshLocalModels();
+    void (async () => {
+      await restoreLocalModelCatalog();
+      await refreshLocalModels();
+    })();
     void refreshModelsDirectory();
     void refreshServers();
     void restoreServerSettings();
@@ -552,9 +562,34 @@ export function App({ initialPanelPreferences }: AppProps) {
     return () => window.clearInterval(timer);
   }, [activePage, selectedServerPort]);
 
+  async function restoreLocalModelCatalog() {
+    try {
+      const saved = await getUiPreference(LOCAL_MODEL_CATALOG_CACHE_KEY);
+      if (!saved) return;
+
+      const parsed = JSON.parse(saved) as Partial<LocalModelCatalogCache>;
+      if (!Array.isArray(parsed.models)) return;
+
+      const restored = parsed.models.map(modelInfoToCatalog);
+      setLocalModels(restored);
+      if (parsed.configs && typeof parsed.configs === "object") {
+        setCatalogConfigs(parsed.configs);
+      }
+      setCatalogSelectedId((current) => {
+        if (restored.some((model) => model.id === current)) {
+          return current;
+        }
+        return restored[0]?.id ?? "";
+      });
+    } catch {
+      // Ignore stale catalog cache and let the full discovery refresh replace it.
+    }
+  }
+
   async function refreshLocalModels() {
     try {
-      const discovered = (await listModels()).map(modelInfoToCatalog);
+      const modelInfos = await listModels();
+      const discovered = modelInfos.map(modelInfoToCatalog);
       const persistedConfigs = await Promise.all(
         discovered.map(async (model) => {
           const fallback = createModelConfig(model);
@@ -573,6 +608,8 @@ export function App({ initialPanelPreferences }: AppProps) {
         }),
       );
 
+      const resolvedConfigs = Object.fromEntries(persistedConfigs);
+
       setLocalModels(discovered);
       setCatalogConfigs((current) => {
         const next = { ...current };
@@ -585,6 +622,13 @@ export function App({ initialPanelPreferences }: AppProps) {
 
         return next;
       });
+      void setUiPreference(
+        LOCAL_MODEL_CATALOG_CACHE_KEY,
+        JSON.stringify({
+          models: modelInfos,
+          configs: resolvedConfigs,
+        } satisfies LocalModelCatalogCache),
+      ).catch(() => undefined);
       setCatalogSelectedId((current) => {
         if (discovered.some((model) => model.id === current)) {
           return current;
@@ -594,6 +638,8 @@ export function App({ initialPanelPreferences }: AppProps) {
       });
     } catch (cause) {
       setError(String(cause));
+    } finally {
+      setLocalModelsReady(true);
     }
   }
 
@@ -1092,6 +1138,7 @@ export function App({ initialPanelPreferences }: AppProps) {
                 logs={logs}
                 selectedPort={selectedServerPort}
                 allModels={localModels}
+                modelsReady={localModelsReady}
                 configs={catalogConfigs}
                 serverSettings={serverSettings}
                 gatewayRunning={gatewayRunning}

@@ -14,6 +14,11 @@ All notable changes to TideStudio will be documented here.
 
 ### Changed
 
+- Load Model is now available immediately during startup model discovery instead of appearing disabled until the GGUF metadata scan completes.
+- TideStudio restores the last completed local-model catalog and load settings from SQLite at startup, then refreshes them from disk in the background.
+- The Load Model table now keeps Size on the far-right edge, with loaded-model Stop actions positioned before it.
+- Windows setup now updates an existing NSIS installation in place instead of showing the "Already Installed" maintenance/uninstall choice.
+- Existing TideStudio is closed before setup replaces application files, while the previous install directory, user settings, and managed models are preserved.
 - GPU Offload now uses the detected GGUF block count as the model-specific maximum when available instead of relying on a fixed generic layer limit.
 - Initial GPU offload defaults now use the detected model layer count when available.
 - Shared dropdown menus now render in an overlay portal and position themselves above or below the trigger based on available viewport space.

@@ -88,3 +88,4 @@
 - Show detected quantization in loaded-model cards when known.
 - Render repository README/model-card Markdown properly in the Model Search right inspector for both Hugging Face and ModelScope.
 - Keep TideStudio public-facing copy straightforward and personal: it is primarily a tool built for the author's own local llama.cpp workflow and shared in case others find it useful. Avoid exaggerated marketing language or manifesto-style positioning.
+- Do not gate the Server Load Model action on the full startup GGUF metadata scan. Restore the last completed local catalog from SQLite for immediate interaction, then refresh authoritative discovery in the background.

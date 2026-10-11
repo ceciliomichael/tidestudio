@@ -2673,11 +2673,11 @@ h2 {
 
 .load-model-dialog__catalog {
   --load-model-dialog-columns:
-    275px
+    minmax(275px, 1fr)
     95px
     58px
     100px
-    56px
+    80px
     72px
     76px;
   display: grid;
@@ -2817,10 +2817,26 @@ h2 {
   white-space: nowrap;
 }
 
+.load-model-dialog__catalog-size {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .load-model-dialog__catalog-action {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+}
+
+.load-model-dialog__catalog-empty {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--color-border-muted);
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
 }
 
 .load-model-dialog__stop.ui-button {
