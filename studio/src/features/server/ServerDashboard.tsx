@@ -34,7 +34,7 @@ type Props = {
   gatewayRunning: boolean;
   onSelectServer: (port: number) => void;
   onStop: (port: number) => Promise<void>;
-  onLoadModel: (model: CatalogModel) => Promise<void>;
+  onLoadModel: (model: CatalogModel, config: ModelConfig) => Promise<void>;
   onServerSettingsChange: (settings: ServerSettings) => void;
 };
 
@@ -97,12 +97,6 @@ export function ServerDashboard({
       pendingModelPaths.includes(model.path) ||
       runningServers.some((server) => server.modelPath === model.path),
   );
-  const loadingModelPaths = [
-    ...pendingModelPaths,
-    ...runningServers
-      .filter((server) => server.state === "loading")
-      .map((server) => server.modelPath),
-  ];
   const reachableEndpoint = "http://localhost:" + serverSettings.port;
 
   function copyWithFeedback(value: string, target: string) {
@@ -415,9 +409,11 @@ export function ServerDashboard({
         open={loadDialogOpen}
         allModels={allModels}
         loadedModels={loadedModels}
-        loadingModelPaths={loadingModelPaths}
+        servers={runningServers}
+        configs={configs}
         onClose={() => setLoadDialogOpen(false)}
-        onLoad={(model) => void onLoadModel(model)}
+        onStop={onStop}
+        onLoad={(model, config) => void onLoadModel(model, config)}
       />
 
       <ServerSettingsDialog

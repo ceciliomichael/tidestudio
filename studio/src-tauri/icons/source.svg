@@ -1,11 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <rect width="64" height="64" rx="14" fill="#0B1220"/>
-  <g stroke="#0B1220" stroke-width="2.6" stroke-linejoin="round">
-    <!-- top face -->
-    <path d="M32 10 L51.05 21 L32 32 L12.95 21 Z" fill="#99F6E4"/>
-    <!-- left face -->
-    <path d="M12.95 21 L32 32 L32 54 L12.95 43 Z" fill="#2DD4BF"/>
-    <!-- right face -->
-    <path d="M51.05 21 L51.05 43 L32 54 L32 32 Z" fill="#0F9D8F"/>
+  <g stroke="#0B1220" stroke-width="1.8" stroke-linejoin="round">
+    <!-- right side of the stem (furthest back) -->
+    <path d="M31.04 32.55 L31.04 55.55 L41 49.8 L41 26.8 Z" fill="#0B7F75"/>
+    <!-- right end of the crossbar -->
+    <path d="M39 27.95 L39 37.15 L48.96 31.4 L48.96 22.2 Z" fill="#0F9D8F"/>
+    <!-- top of the crossbar -->
+    <path d="M15.1 14.15 L39 27.95 L48.96 22.2 L25.06 8.4 Z" fill="#99F6E4"/>
+    <!-- front face: the letter T -->
+    <path d="M15.1 14.15 L39 27.95 L39 37.15 L31.04 32.55 L31.04 55.55 L23.07 50.95 L23.07 27.95 L15.1 23.35 Z" fill="#2DD4BF"/>
   </g>
 </svg>

@@ -7,9 +7,13 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 pub fn model_id(path: &str) -> Result<String, String> {
-    let root = resolve_models_dir()?.canonicalize().map_err(|e| e.to_string())?;
+    let root = resolve_models_dir()?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
     let file = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
-    let relative = file.strip_prefix(root).map_err(|_| "model is outside the managed directory")?;
+    let relative = file
+        .strip_prefix(root)
+        .map_err(|_| "model is outside the managed directory")?;
     let id = relative.to_string_lossy().replace('\\', "/");
     Ok(id.strip_suffix(".gguf").unwrap_or(&id).to_string())
 }
@@ -77,6 +81,19 @@ fn build_config(model: &ModelInfo) -> Result<ServerConfig, String> {
         "extraArgs": []
     });
 
+    let tuning_defaults = json!({
+        "cpuThreads": null,
+        "batchSize": null,
+        "microBatchSize": null,
+        "parallelSlots": null,
+        "kvCacheOffload": true,
+        "ropeFrequencyBase": null,
+        "ropeFrequencyScale": null,
+    });
+    for (key, setting) in tuning_defaults.as_object().expect("load tuning defaults") {
+        value[key] = setting.clone();
+    }
+
     if let Some(settings) = load_model_settings(&model.path)? {
         for section in ["load", "inference"] {
             let Some(saved) = settings.get(section).and_then(Value::as_object) else {
@@ -96,8 +113,14 @@ fn build_config(model: &ModelInfo) -> Result<ServerConfig, String> {
     }
 
     if !llm {
-        let fields = ["thinkingEnabled", "reasoningPreserve", "supportsReasoning",
-            "supportsThinkingToggle", "supportsReasoningEffort", "supportsReasoningPreserve"];
+        let fields = [
+            "thinkingEnabled",
+            "reasoningPreserve",
+            "supportsReasoning",
+            "supportsThinkingToggle",
+            "supportsReasoningEffort",
+            "supportsReasoningPreserve",
+        ];
         for key in fields {
             value[key] = json!(false);
         }

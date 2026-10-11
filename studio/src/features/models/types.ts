@@ -9,11 +9,13 @@ export type CatalogModel = {
   architecture: string;
   parameters: string;
   contextLength: string;
+  contextTokens: number | null;
   poolingType: string | null;
   quantization: string;
   size: string;
   modified: string;
   chatTemplate: string | null;
+  tokenizerFingerprint: string | null;
   supportsMtp: boolean;
   supportsReasoning: boolean;
   supportsThinkingToggle: boolean;
@@ -22,3 +24,18 @@ export type CatalogModel = {
   supportsVision: boolean;
   supportsTools: boolean;
 };
+
+export function compatibleDraftModels(
+  target: CatalogModel,
+  models: CatalogModel[],
+): CatalogModel[] {
+  const fingerprint = target.tokenizerFingerprint;
+  if (!fingerprint || target.category !== "LLM") return [];
+
+  return models.filter(
+    (candidate) =>
+      candidate.path !== target.path &&
+      (candidate.category === "Drafter" || candidate.category === "LLM") &&
+      candidate.tokenizerFingerprint === fingerprint,
+  );
+}

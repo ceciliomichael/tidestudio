@@ -146,6 +146,9 @@ fn scan_directory(
             chat_template: inspection
                 .as_ref()
                 .and_then(|value| value.chat_template.clone()),
+            tokenizer_fingerprint: inspection
+                .as_ref()
+                .and_then(|value| value.tokenizer_fingerprint.clone()),
             supports_mtp: inspection
                 .as_ref()
                 .is_some_and(|value| value.capabilities.mtp.supported),

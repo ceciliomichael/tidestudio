@@ -38,6 +38,7 @@ pub struct GgufInspection {
     pub context_length: Option<u64>,
     pub pooling_type: Option<String>,
     pub chat_template: Option<String>,
+    pub tokenizer_fingerprint: Option<String>,
     pub capabilities: ModelCapabilities,
 }
 
@@ -77,11 +78,13 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
     let mut pooling_type = None;
     let mut chat_template = None;
     let mut capability_metadata = Vec::new();
+    let mut tokenizer_metadata = Vec::new();
 
     for _ in 0..metadata_count {
         let key = read_string(&mut file)?;
         let value_type = read_u32(&mut file)?;
         let lower_key = key.to_lowercase();
+        let tokenizer_metadata_key = lower_key.starts_with("tokenizer.ggml.");
         let capture_value = lower_key == "general.architecture"
             || lower_key == "general.name"
             || lower_key == "general.size_label"
@@ -93,7 +96,11 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
             || lower_key.contains("chat_template")
             || capability_key(&lower_key);
 
-        let value = if capture_value {
+        let value = if tokenizer_metadata_key {
+            let value_hash = fingerprint_value(&mut file, value_type)?;
+            tokenizer_metadata.push((lower_key.clone(), value_hash));
+            None
+        } else if capture_value {
             read_value_text(&mut file, value_type)?
         } else {
             skip_value(&mut file, value_type)?;
@@ -173,6 +180,7 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         &capability_metadata,
         hints,
     );
+    let tokenizer_fingerprint = build_tokenizer_fingerprint(tokenizer_metadata);
 
     Ok(GgufInspection {
         architecture,
@@ -181,8 +189,87 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         context_length,
         pooling_type,
         chat_template,
+        tokenizer_fingerprint,
         capabilities,
     })
+}
+
+const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
+
+fn fingerprint_bytes(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(FNV_PRIME);
+    }
+}
+
+fn fingerprint_value(file: &mut File, value_type: u32) -> Result<u64, String> {
+    let mut hash = FNV_OFFSET_BASIS;
+    fingerprint_bytes(&mut hash, &value_type.to_le_bytes());
+    fingerprint_value_payload(file, value_type, &mut hash)?;
+    Ok(hash)
+}
+
+fn fingerprint_value_payload(
+    file: &mut File,
+    value_type: u32,
+    hash: &mut u64,
+) -> Result<(), String> {
+    if value_type == 8 {
+        let length = read_u64(file)?;
+        if length > MAX_STRING_BYTES {
+            return Err(format!(
+                "GGUF metadata string is unexpectedly large: {length} bytes"
+            ));
+        }
+        fingerprint_bytes(hash, &length.to_le_bytes());
+        let mut bytes = vec![0_u8; length as usize];
+        file.read_exact(&mut bytes)
+            .map_err(|error| format!("failed to read GGUF metadata: {error}"))?;
+        fingerprint_bytes(hash, &bytes);
+        return Ok(());
+    }
+
+    if value_type == 9 {
+        let element_type = read_u32(file)?;
+        let count = read_u64(file)?;
+        fingerprint_bytes(hash, &element_type.to_le_bytes());
+        fingerprint_bytes(hash, &count.to_le_bytes());
+        for _ in 0..count {
+            fingerprint_value_payload(file, element_type, hash)?;
+        }
+        return Ok(());
+    }
+
+    let size = fixed_size(value_type)
+        .ok_or_else(|| format!("unsupported GGUF metadata value type {value_type}"))?;
+    let mut bytes = vec![0_u8; size as usize];
+    file.read_exact(&mut bytes)
+        .map_err(|error| format!("failed to read GGUF metadata: {error}"))?;
+    fingerprint_bytes(hash, &bytes);
+    Ok(())
+}
+
+fn build_tokenizer_fingerprint(mut metadata: Vec<(String, u64)>) -> Option<String> {
+    let has_model = metadata
+        .iter()
+        .any(|(key, _)| key == "tokenizer.ggml.model");
+    let has_tokens = metadata
+        .iter()
+        .any(|(key, _)| key == "tokenizer.ggml.tokens");
+    if !has_model || !has_tokens {
+        return None;
+    }
+
+    metadata.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut hash = FNV_OFFSET_BASIS;
+    for (key, value_hash) in metadata {
+        fingerprint_bytes(&mut hash, key.as_bytes());
+        fingerprint_bytes(&mut hash, &[0]);
+        fingerprint_bytes(&mut hash, &value_hash.to_le_bytes());
+    }
+    Some(format!("tok-v1-{hash:016x}"))
 }
 
 fn normalize_pooling_type(value: &str) -> Option<String> {
@@ -920,6 +1007,44 @@ mod tests {
     }
 
     #[test]
+    fn tokenizer_fingerprint_matches_only_exact_tokenizer_metadata() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let first = std::env::temp_dir().join(format!("tidestudio-tokenizer-a-{unique}.gguf"));
+        let second = std::env::temp_dir().join(format!("tidestudio-tokenizer-b-{unique}.gguf"));
+        let different = std::env::temp_dir().join(format!("tidestudio-tokenizer-c-{unique}.gguf"));
+
+        write_tokenizer_test_gguf(&first, &["<s>", "hello", "world"]);
+        write_tokenizer_test_gguf(&second, &["<s>", "hello", "world"]);
+        write_tokenizer_test_gguf(&different, &["<s>", "hello", "draft"]);
+
+        let inspect = |path: &Path| {
+            inspect_gguf(
+                path,
+                CapabilityHints {
+                    repo_id: "example/tokenizer",
+                    filename: "model.gguf",
+                    tags: &[],
+                    pipeline_tag: None,
+                },
+            )
+            .expect("inspect tokenizer gguf")
+            .tokenizer_fingerprint
+            .expect("tokenizer fingerprint")
+        };
+
+        let first_fingerprint = inspect(&first);
+        assert_eq!(first_fingerprint, inspect(&second));
+        assert_ne!(first_fingerprint, inspect(&different));
+
+        fs::remove_file(first).expect("remove first tokenizer gguf");
+        fs::remove_file(second).expect("remove second tokenizer gguf");
+        fs::remove_file(different).expect("remove different tokenizer gguf");
+    }
+
+    #[test]
     fn detects_decision_model_before_bert_embedding_heuristic() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1129,6 +1254,31 @@ mod tests {
         write_gguf_string(file, key);
         file.write_all(&4_u32.to_le_bytes()).expect("u32 type");
         file.write_all(&value.to_le_bytes()).expect("u32 value");
+    }
+
+    fn write_string_array_metadata(file: &mut File, key: &str, values: &[&str]) {
+        write_gguf_string(file, key);
+        file.write_all(&9_u32.to_le_bytes()).expect("array type");
+        file.write_all(&8_u32.to_le_bytes())
+            .expect("string array element type");
+        file.write_all(&(values.len() as u64).to_le_bytes())
+            .expect("string array length");
+        for value in values {
+            write_gguf_string(file, value);
+        }
+    }
+
+    fn write_tokenizer_test_gguf(path: &Path, tokens: &[&str]) {
+        let mut file = File::create(path).expect("create tokenizer test gguf");
+        file.write_all(b"GGUF").expect("magic");
+        file.write_all(&3_u32.to_le_bytes()).expect("version");
+        file.write_all(&0_u64.to_le_bytes()).expect("tensor count");
+        file.write_all(&4_u64.to_le_bytes())
+            .expect("metadata count");
+        write_string_metadata(&mut file, "general.architecture", "llama");
+        write_string_metadata(&mut file, "tokenizer.ggml.model", "gpt2");
+        write_string_metadata(&mut file, "tokenizer.ggml.pre", "llama-bpe");
+        write_string_array_metadata(&mut file, "tokenizer.ggml.tokens", tokens);
     }
 
     fn write_tensor_info(file: &mut File, name: &str, dimensions: &[u64], offset: u64) {

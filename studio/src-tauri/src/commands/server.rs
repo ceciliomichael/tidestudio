@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use serde::Serialize;
-use std::{net::TcpListener, time::Duration};
+use std::{net::TcpListener, sync::atomic::Ordering, time::Duration};
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, Debug, Serialize)]
@@ -162,6 +162,9 @@ fn configure_gateway_now(app: &tauri::AppHandle, config: GatewayConfig) -> Resul
 
     {
         let mut gateway = state.gateway.lock().map_err(|_| "gateway lock poisoned")?;
+        if state.shutting_down.load(Ordering::Acquire) {
+            return Err("TideStudio is shutting down".to_string());
+        }
         gateway.start(config.clone())?;
     }
 
@@ -313,6 +316,10 @@ pub(crate) async fn start_server_with_origin(
     let (status, needs_readiness) = tauri::async_runtime::spawn_blocking(move || {
         let state = spawn_app.state::<AppState>();
 
+        if state.shutting_down.load(Ordering::Acquire) {
+            return Err("TideStudio is shutting down".to_string());
+        }
+
         config.model_id = model_id(&config.model_path)?;
 
         {
@@ -339,6 +346,9 @@ pub(crate) async fn start_server_with_origin(
             config.port = allocate_worker_port(public_port)?;
             let result = {
                 let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
+                if state.shutting_down.load(Ordering::Acquire) {
+                    return Err("TideStudio is shutting down".to_string());
+                }
                 servers.spawn_with_origin(config.clone(), jit)
             };
             match result {

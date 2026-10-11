@@ -1,15 +1,20 @@
 mod commands;
 mod core;
+mod tray;
 
 use core::{
     backends::llama_cpp::LlamaCppBackend, gateway::GatewayManager, servers::ServerRegistry,
 };
-use std::sync::Mutex;
+use std::sync::{Mutex, atomic::AtomicBool};
+use tauri::RunEvent;
 
 pub struct AppState {
     pub servers: Mutex<ServerRegistry>,
     pub gateway: Mutex<GatewayManager>,
     pub gateway_port: Mutex<u16>,
+    pub shutting_down: AtomicBool,
+    pub tray_popup_visible: AtomicBool,
+    pub tray_icon_bounds: Mutex<Option<(i32, i32, i32, i32)>>,
 }
 
 impl Default for AppState {
@@ -18,6 +23,9 @@ impl Default for AppState {
             servers: Mutex::new(ServerRegistry::new(Box::new(LlamaCppBackend))),
             gateway: Mutex::new(GatewayManager::default()),
             gateway_port: Mutex::new(3456),
+            shutting_down: AtomicBool::new(false),
+            tray_popup_visible: AtomicBool::new(false),
+            tray_icon_bounds: Mutex::new(None),
         }
     }
 }
@@ -25,6 +33,16 @@ impl Default for AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|arg| arg == "--quit-for-install") {
+                // WM_COPYDATA invokes this callback synchronously. Defer the exit
+                // until the second instance has finished forwarding its request.
+                let app_to_close = app.clone();
+                let _ = app.run_on_main_thread(move || tray::quit_app(app_to_close));
+            } else {
+                tray::show_main(app);
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -35,6 +53,7 @@ pub fn run() {
             .map_err(std::io::Error::other)?;
             core::paths::initialize_models_dir(stored.as_deref()).map_err(std::io::Error::other)?;
             commands::jit::start_controller(app.handle().clone());
+            tray::setup_tray(app)?;
             Ok(())
         })
         .manage(AppState::default())
@@ -64,7 +83,17 @@ pub fn run() {
             commands::server::configure_gateway,
             commands::server::configure_gateway_background,
             commands::server::gateway_status,
+            tray::toggle_window,
+            tray::tray_popup_visible,
+            tray::quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run TideStudio");
+        .build(tauri::generate_context!())
+        .expect("failed to build TideStudio")
+        .run(|app, event| match event {
+            RunEvent::WindowEvent { label, event, .. } => {
+                tray::handle_window_event(app, &label, &event);
+            }
+            RunEvent::ExitRequested { .. } | RunEvent::Exit => tray::shutdown(app),
+            _ => {}
+        });
 }

@@ -232,6 +232,22 @@ impl ServerRegistry {
         })
     }
 
+    /// Stop every TideStudio-owned worker, including those still loading.
+    /// A failure on one worker must not prevent the others from stopping.
+    pub fn stop_all(&mut self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for (port, mut server) in self.servers.drain() {
+            if let Err(error) = server.instance.stop() {
+                errors.push(format!("port {port}: {error}"));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+
     pub fn status(&mut self, port: u16) -> Result<Option<ServerStatus>, String> {
         let Some(server) = self.servers.get_mut(&port) else {
             return Ok(None);
@@ -292,9 +308,7 @@ impl ServerRegistry {
 
 impl Drop for ServerRegistry {
     fn drop(&mut self) {
-        for (_, mut worker) in self.servers.drain() {
-            let _ = worker.instance.stop();
-        }
+        let _ = self.stop_all();
     }
 }
 
@@ -304,6 +318,10 @@ mod tests {
     use crate::core::{
         backends::{InferenceBackend, ManagedInference},
         config::{ServerConfig, SpeculativeMode},
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
     };
 
     struct MockBackend;
@@ -358,6 +376,13 @@ mod tests {
             port: 32123,
             context_size: None,
             gpu_layers: None,
+            cpu_threads: None,
+            batch_size: None,
+            micro_batch_size: None,
+            parallel_slots: None,
+            kv_cache_offload: true,
+            rope_frequency_base: None,
+            rope_frequency_scale: None,
             system_prompt: String::new(),
             chat_template: String::new(),
             thinking_enabled: false,
@@ -414,5 +439,52 @@ mod tests {
         assert_eq!(ready.model_category, "DECISION");
         assert_eq!(ready.quantization, "F16");
         assert!(ready.supports_tools);
+    }
+
+    struct CountingBackend(Arc<AtomicUsize>);
+
+    struct CountingInstance(Arc<AtomicUsize>);
+
+    impl ManagedInference for CountingInstance {
+        fn pid(&self) -> u32 {
+            std::process::id()
+        }
+        fn stop(&mut self) -> Result<(), String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        fn is_running(&mut self) -> Result<bool, String> {
+            Ok(true)
+        }
+        fn logs(&self) -> Vec<String> {
+            Vec::new()
+        }
+    }
+
+    impl InferenceBackend for CountingBackend {
+        fn id(&self) -> &'static str {
+            "counting"
+        }
+        fn start(&self, _config: &ServerConfig) -> Result<Box<dyn ManagedInference>, String> {
+            Ok(Box::new(CountingInstance(Arc::clone(&self.0))))
+        }
+    }
+
+    #[test]
+    fn stop_all_unloads_loading_and_ready_workers_once() {
+        let stops = Arc::new(AtomicUsize::new(0));
+        let mut registry = ServerRegistry::new(Box::new(CountingBackend(Arc::clone(&stops))));
+        registry.spawn(config()).unwrap();
+        let mut second = config();
+        second.port += 1;
+        registry.spawn(second).unwrap();
+        registry.mark_ready(32123).unwrap();
+
+        registry.stop_all().unwrap();
+        assert_eq!(stops.load(Ordering::SeqCst), 2);
+        assert!(registry.list().unwrap().is_empty());
+        registry.stop_all().unwrap();
+        drop(registry);
+        assert_eq!(stops.load(Ordering::SeqCst), 2);
     }
 }

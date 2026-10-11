@@ -27,6 +27,13 @@ export type ReasoningEffort =
 export type ModelConfig = {
   contextSize: number | null;
   gpuLayers: number | null;
+  cpuThreads: number | null;
+  batchSize: number | null;
+  microBatchSize: number | null;
+  parallelSlots: number | null;
+  kvCacheOffload: boolean;
+  ropeFrequencyBase: number | null;
+  ropeFrequencyScale: number | null;
   systemPrompt: string;
   chatTemplate: string;
   thinkingEnabled: boolean;
@@ -59,6 +66,13 @@ export type ModelSettingsFile = {
     ModelConfig,
     | "contextSize"
     | "gpuLayers"
+    | "cpuThreads"
+    | "batchSize"
+    | "microBatchSize"
+    | "parallelSlots"
+    | "kvCacheOffload"
+    | "ropeFrequencyBase"
+    | "ropeFrequencyScale"
     | "chatTemplate"
     | "flashAttention"
     | "embeddingPooling"
@@ -108,6 +122,13 @@ export function createDefaultModelConfig(): ModelConfig {
   return {
     contextSize: 4096,
     gpuLayers: 99,
+    cpuThreads: null,
+    batchSize: null,
+    microBatchSize: null,
+    parallelSlots: null,
+    kvCacheOffload: true,
+    ropeFrequencyBase: null,
+    ropeFrequencyScale: null,
     systemPrompt: "",
     chatTemplate: "",
     thinkingEnabled: false,
@@ -143,6 +164,13 @@ export function modelConfigToSettingsFile(
     load: {
       contextSize: config.contextSize,
       gpuLayers: config.gpuLayers,
+      cpuThreads: config.cpuThreads,
+      batchSize: config.batchSize,
+      microBatchSize: config.microBatchSize,
+      parallelSlots: config.parallelSlots,
+      kvCacheOffload: config.kvCacheOffload,
+      ropeFrequencyBase: config.ropeFrequencyBase,
+      ropeFrequencyScale: config.ropeFrequencyScale,
       chatTemplate: config.chatTemplate,
       flashAttention: config.flashAttention,
       embeddingPooling: config.embeddingPooling,

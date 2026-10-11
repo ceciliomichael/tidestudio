@@ -119,11 +119,13 @@ function modelInfoToCatalog(model: ModelInfo): CatalogModel {
     architecture: model.architecture ?? "Unknown",
     parameters: model.parameters ?? "Unknown",
     contextLength: formatContextLength(model.contextLength),
+    contextTokens: model.contextLength,
     poolingType: model.poolingType,
     quantization: model.quantization ?? "Unknown",
     size: formatModelSize(model.sizeBytes),
     modified: formatModified(model.modifiedMs),
     chatTemplate: model.chatTemplate,
+    tokenizerFingerprint: model.tokenizerFingerprint,
     supportsMtp: model.supportsMtp,
     supportsReasoning: model.supportsReasoning,
     supportsThinkingToggle: model.supportsThinkingToggle,
@@ -164,11 +166,13 @@ function runtimeCatalogModel(server: ServerStatus): CatalogModel {
     architecture: "Unknown",
     parameters: "Unknown",
     contextLength: "Unknown",
+    contextTokens: null,
     poolingType: null,
     quantization: server.quantization || "Unknown",
     size: "Loaded",
     modified: "Running",
     chatTemplate: null,
+    tokenizerFingerprint: null,
     supportsMtp: server.supportsMtp,
     supportsReasoning: false,
     supportsThinkingToggle: false,
@@ -747,7 +751,7 @@ export function App({ initialPanelPreferences }: AppProps) {
     }
   }
 
-  async function handleLoadModel(model: CatalogModel) {
+  async function handleLoadModel(model: CatalogModel, modelConfig: ModelConfig) {
     if (model.category === "Embedding" && model.poolingType === "rank") {
       setError(
         "This GGUF is a reranking model (rank pooling). TideStudio does not expose a public reranking endpoint yet.",
@@ -755,8 +759,6 @@ export function App({ initialPanelPreferences }: AppProps) {
       return;
     }
 
-    const modelConfig =
-      catalogConfigs[model.path] ?? createModelConfig(model);
     const config: ServerConfig = {
       modelPath: model.path,
       modelName: model.name,
@@ -784,6 +786,7 @@ export function App({ initialPanelPreferences }: AppProps) {
           : modelConfig.chatTemplate,
     };
 
+    setCatalogConfigs((current) => ({ ...current, [model.path]: modelConfig }));
     setPendingModelPaths((current) =>
       current.includes(model.path) ? current : [...current, model.path],
     );
@@ -1124,6 +1127,7 @@ export function App({ initialPanelPreferences }: AppProps) {
             {activePage === "server" ? (
               <ModelInspector
                 selectedModel={selectedServerModel}
+                availableModels={localModels}
                 config={selectedServerModelConfig}
                 runtimeLoaded
                 onChange={handleServerModelConfigChange}
@@ -1131,6 +1135,7 @@ export function App({ initialPanelPreferences }: AppProps) {
             ) : activePage === "models" ? (
               <ModelInspector
                 selectedModel={selectedCatalogModel}
+                availableModels={localModels}
                 config={selectedCatalogConfig}
                 runtimeLoaded={
                   selectedCatalogModel !== null &&

@@ -18,10 +18,11 @@ import type {
   ModelConfig,
   SpeculativeMode,
 } from "../../lib/config";
-import type { CatalogModel } from "./types";
+import { compatibleDraftModels, type CatalogModel } from "./types";
 
 type Props = {
   model: CatalogModel;
+  availableModels: CatalogModel[];
   config: ModelConfig;
   runtimeLoaded?: boolean;
   onChange: (config: ModelConfig) => void;
@@ -36,6 +37,7 @@ const EMBEDDING_POOLING_OPTIONS: DropdownOption<EmbeddingPooling>[] = [
 
 export function ModelLoadTab({
   model,
+  availableModels,
   config,
   runtimeLoaded = false,
   onChange,
@@ -62,13 +64,36 @@ export function ModelLoadTab({
     config.speculativeMode === "mtp" && !model.supportsMtp
       ? "none"
       : config.speculativeMode;
+  const compatibleDrafts = compatibleDraftModels(model, availableModels);
+  const selectedDraftIsCompatible = compatibleDrafts.some(
+    (candidate) => candidate.path === config.draftModelPath,
+  );
+  const draftModelOptions: DropdownOption<string>[] = [
+    ...(!selectedDraftIsCompatible
+      ? [{ label: "Select compatible model", value: "" }]
+      : []),
+    ...compatibleDrafts.map((candidate) => ({
+      label: candidate.name,
+      value: candidate.path,
+      badge: candidate.category === "Drafter" ? "Drafter" : candidate.quantization,
+    })),
+  ];
+
+  function changeSpeculativeMode(nextMode: SpeculativeMode) {
+    update({
+      speculativeMode: nextMode,
+      ...(nextMode === "draft" && !selectedDraftIsCompatible
+        ? { draftModelPath: compatibleDrafts[0]?.path ?? "" }
+        : {}),
+    });
+  }
 
   if (model.category === "Drafter") {
     return (
       <div className="model-inspector-tab">
         <p className="inspector-helper-copy">
           Drafter models are configured from the target LLM&apos;s Load &gt;
-          Speculative Decoding section. The target owns the draft model path,
+          Speculative Decoding section. The target owns the draft model selection,
           draft GPU offload, and draft token limits.
         </p>
       </div>
@@ -172,15 +197,33 @@ export function ModelLoadTab({
       {isLlm ? (
         <CollapsibleSection title="Speculative Decoding" icon={Workflow}>
           <div className="inspector-control-stack">
-            <div className="inspector-control-row">
+            <div className="inspector-control-row model-load__speculative-mode">
               <span>Mode</span>
               <Dropdown
                 ariaLabel="Speculative decoding mode"
                 value={speculativeMode}
                 options={speculativeOptions}
-                onChange={(speculativeMode) => update({ speculativeMode })}
+                onChange={changeSpeculativeMode}
               />
             </div>
+
+            {speculativeMode === "draft" ? (
+              compatibleDrafts.length ? (
+                <div className="inspector-control-row model-load__draft-model">
+                  <span>Draft Model</span>
+                  <Dropdown
+                    ariaLabel="Compatible draft model"
+                    value={selectedDraftIsCompatible ? config.draftModelPath : ""}
+                    options={draftModelOptions}
+                    onChange={(draftModelPath) => update({ draftModelPath })}
+                  />
+                </div>
+              ) : (
+                <p className="inspector-control-hint model-load__draft-model-empty">
+                  No installed model has a matching tokenizer and vocabulary fingerprint.
+                </p>
+              )
+            ) : null}
 
             {speculativeMode !== "none" ? (
               <>
@@ -239,16 +282,6 @@ export function ModelLoadTab({
             {speculativeMode === "draft" ? (
               <>
                 <InputField
-                  label="Draft Model Path"
-                  type="text"
-                  value={config.draftModelPath}
-                  placeholder="D:\\models\\draft-model.gguf"
-                  onChange={(event) =>
-                    update({ draftModelPath: event.target.value })
-                  }
-                />
-
-                <InputField
                   label="Draft GPU Layers"
                   layout="inline"
                   compact
@@ -263,8 +296,7 @@ export function ModelLoadTab({
                   }
                 />
                 <p className="inspector-control-hint">
-                  External draft models must be tokenizer and vocabulary
-                  compatible with the target model.
+                  Only installed models with an exact tokenizer metadata fingerprint match are selectable.
                 </p>
               </>
             ) : null}

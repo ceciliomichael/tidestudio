@@ -4,7 +4,11 @@ use crate::{
     core::models::{config_for_id, installed_ids},
 };
 use serde::Deserialize;
-use std::{thread, time::{Duration, Instant}};
+use std::{
+    sync::atomic::Ordering,
+    thread,
+    time::{Duration, Instant},
+};
 use tauri::{Emitter, Manager};
 
 #[derive(Deserialize)]
@@ -16,6 +20,9 @@ struct JITAction {
 
 fn endpoint(app: &tauri::AppHandle) -> Option<(String, String)> {
     let state = app.state::<AppState>();
+    if state.shutting_down.load(Ordering::Acquire) {
+        return None;
+    }
     let mut gateway = state.gateway.lock().ok()?;
     let (port, token) = gateway.control_endpoint()?;
     Some((format!("http://127.0.0.1:{port}/_tidestudio/jit"), token))
@@ -95,6 +102,13 @@ pub(crate) fn start_controller(app: tauri::AppHandle) {
         let mut last_catalog = Instant::now() - Duration::from_secs(30);
         let mut last_endpoint = String::new();
         loop {
+            if app
+                .state::<AppState>()
+                .shutting_down
+                .load(Ordering::Acquire)
+            {
+                break;
+            }
             let Some((url, token)) = endpoint(&app) else {
                 last_endpoint.clear();
                 thread::sleep(Duration::from_millis(250));
@@ -112,6 +126,13 @@ pub(crate) fn start_controller(app: tauri::AppHandle) {
             {
                 if response.status().is_success() {
                     if let Ok(action) = response.json::<JITAction>() {
+                        if app
+                            .state::<AppState>()
+                            .shutting_down
+                            .load(Ordering::Acquire)
+                        {
+                            break;
+                        }
                         match action.kind.as_str() {
                             "load" => load(&app, &action.model_id),
                             "unload" => unload(&app, &action.model_id),

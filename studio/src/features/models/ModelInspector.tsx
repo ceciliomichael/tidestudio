@@ -19,6 +19,7 @@ type InspectorTab = "info" | "load" | "inference";
 
 type Props = {
   selectedModel: CatalogModel | null;
+  availableModels: CatalogModel[];
   config: ModelConfig | null;
   runtimeLoaded?: boolean;
   onChange: (config: ModelConfig) => void;
@@ -44,6 +45,7 @@ const TABS: readonly SegmentedFieldOption<InspectorTab>[] = [
 
 export function ModelInspector({
   selectedModel,
+  availableModels,
   config,
   runtimeLoaded = false,
   onChange,
@@ -86,6 +88,7 @@ export function ModelInspector({
         {tab === "load" ? (
           <ModelLoadTab
             model={selectedModel}
+            availableModels={availableModels}
             config={config}
             runtimeLoaded={runtimeLoaded}
             onChange={onChange}

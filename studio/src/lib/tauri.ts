@@ -23,6 +23,7 @@ export type ModelInfo = {
   poolingType: string | null;
   quantization: string | null;
   chatTemplate: string | null;
+  tokenizerFingerprint: string | null;
   supportsMtp: boolean;
   supportsReasoning: boolean;
   supportsThinkingToggle: boolean;

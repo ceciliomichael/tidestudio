@@ -4,6 +4,10 @@ fn default_reasoning_effort() -> String {
     "default".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SpeculativeMode {
@@ -43,6 +47,14 @@ pub struct ServerConfig {
     pub port: u16,
     pub context_size: Option<u32>,
     pub gpu_layers: Option<i32>,
+    pub cpu_threads: Option<u32>,
+    pub batch_size: Option<u32>,
+    pub micro_batch_size: Option<u32>,
+    pub parallel_slots: Option<u32>,
+    #[serde(default = "default_true")]
+    pub kv_cache_offload: bool,
+    pub rope_frequency_base: Option<f32>,
+    pub rope_frequency_scale: Option<f32>,
     #[serde(default)]
     pub system_prompt: String,
     #[serde(default)]

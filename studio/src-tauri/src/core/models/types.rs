@@ -15,6 +15,7 @@ pub struct ModelInfo {
     pub pooling_type: Option<String>,
     pub quantization: Option<String>,
     pub chat_template: Option<String>,
+    pub tokenizer_fingerprint: Option<String>,
     pub supports_mtp: bool,
     pub supports_reasoning: bool,
     pub supports_thinking_toggle: bool,

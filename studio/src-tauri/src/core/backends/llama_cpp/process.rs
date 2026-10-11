@@ -91,6 +91,8 @@ pub fn spawn_llama_server(
         command.arg("--gpu-layers").arg(gpu_layers.to_string());
     }
 
+    add_load_tuning_args(&mut command, config);
+
     if config.flash_attention {
         command.arg("--flash-attn").arg("on");
     }
@@ -134,6 +136,34 @@ pub fn spawn_llama_server(
     Ok(LlamaCppInstance { child, logs })
 }
 
+fn add_load_tuning_args(command: &mut Command, config: &ServerConfig) {
+    if let Some(threads) = config.cpu_threads {
+        command.arg("--threads").arg(threads.to_string());
+    }
+    if config.model_category != "DECISION" {
+        if let Some(batch_size) = config.batch_size {
+            command.arg("--batch-size").arg(batch_size.to_string());
+        }
+        if let Some(micro_batch_size) = config.micro_batch_size {
+            command
+                .arg("--ubatch-size")
+                .arg(micro_batch_size.to_string());
+        }
+        if let Some(parallel_slots) = config.parallel_slots {
+            command.arg("--parallel").arg(parallel_slots.to_string());
+        }
+    }
+    if !config.kv_cache_offload {
+        command.arg("--no-kv-offload");
+    }
+    if let Some(base) = config.rope_frequency_base {
+        command.arg("--rope-freq-base").arg(base.to_string());
+    }
+    if let Some(scale) = config.rope_frequency_scale {
+        command.arg("--rope-freq-scale").arg(scale.to_string());
+    }
+}
+
 fn ensure_cuda_available(executable: &Path) -> Result<(), String> {
     let mut command = Command::new(executable);
     command.arg("--list-devices");
@@ -165,9 +195,9 @@ fn add_decision_runtime_args(command: &mut Command, config: &ServerConfig) {
         .arg("--parallel")
         .arg("1")
         .arg("--batch-size")
-        .arg(encoder_batch.to_string())
+        .arg(config.batch_size.unwrap_or(encoder_batch).to_string())
         .arg("--ubatch-size")
-        .arg(encoder_batch.to_string());
+        .arg(config.micro_batch_size.unwrap_or(encoder_batch).to_string());
 }
 
 fn add_prompt_args(command: &mut Command, config: &ServerConfig) {
@@ -259,4 +289,84 @@ where
             buffer.push_back(format!("[{source}] {line}"));
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn model_config() -> ServerConfig {
+        serde_json::from_value(json!({ "modelPath": "test.gguf" }))
+            .expect("minimal model config should deserialize")
+    }
+
+    fn command_args(command: &Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn launch_tuning_maps_to_llama_flags() {
+        let mut config = model_config();
+        config.cpu_threads = Some(12);
+        config.batch_size = Some(2048);
+        config.micro_batch_size = Some(512);
+        config.parallel_slots = Some(4);
+        config.kv_cache_offload = false;
+        config.rope_frequency_base = Some(10000.0);
+        config.rope_frequency_scale = Some(2.0);
+
+        let mut command = Command::new("llama-server");
+        add_load_tuning_args(&mut command, &config);
+
+        assert_eq!(
+            command_args(&command),
+            vec![
+                "--threads",
+                "12",
+                "--batch-size",
+                "2048",
+                "--ubatch-size",
+                "512",
+                "--parallel",
+                "4",
+                "--no-kv-offload",
+                "--rope-freq-base",
+                "10000",
+                "--rope-freq-scale",
+                "2",
+            ]
+        );
+    }
+
+    #[test]
+    fn auto_defaults_do_not_override_runtime_and_decision_keeps_one_slot() {
+        let mut config = model_config();
+        let mut command = Command::new("llama-server");
+        add_load_tuning_args(&mut command, &config);
+        assert!(command_args(&command).is_empty());
+
+        config.model_category = "DECISION".to_string();
+        config.parallel_slots = Some(4);
+        config.context_size = Some(4096);
+        config.batch_size = Some(1024);
+        config.micro_batch_size = Some(256);
+        let mut command = Command::new("llama-server");
+        add_load_tuning_args(&mut command, &config);
+        add_decision_runtime_args(&mut command, &config);
+        assert_eq!(
+            command_args(&command),
+            vec![
+                "--parallel",
+                "1",
+                "--batch-size",
+                "1024",
+                "--ubatch-size",
+                "256",
+            ]
+        );
+    }
 }
