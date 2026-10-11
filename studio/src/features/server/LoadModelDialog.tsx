@@ -6,7 +6,7 @@ import { Modal } from "../../components/ui/Modal";
 import { SegmentedField } from "../../components/ui/SegmentedField";
 import { createDefaultModelConfig, type ModelConfig } from "../../lib/config";
 import type { ServerStatus } from "../../lib/tauri";
-import type { CatalogModel } from "../models/types";
+import { modelDisplayName, modelFileName, type CatalogModel } from "../models/types";
 import { LoadModelSettingsPage } from "./LoadModelSettingsPage";
 
 type SortMode = "recent" | "size" | "name";
@@ -67,7 +67,7 @@ export function LoadModelDialog({
       ? [...allModels]
       : allModels.filter((model) =>
           [
-            model.name,
+            modelDisplayName(model.path),
             model.publisher,
             model.architecture,
             model.parameters,
@@ -78,7 +78,9 @@ export function LoadModelDialog({
     if (sortMode === "size") {
       filtered.sort((left, right) => sizeValue(right.size) - sizeValue(left.size));
     } else if (sortMode === "name") {
-      filtered.sort((left, right) => left.name.localeCompare(right.name));
+      filtered.sort((left, right) =>
+        modelDisplayName(left.path).localeCompare(modelDisplayName(right.path)),
+      );
     }
 
     return filtered;
@@ -158,7 +160,7 @@ export function LoadModelDialog({
                 setDraft(null);
               }}
             />
-            <strong title={selectedModel.name}>{selectedModel.name}</strong>
+            <strong title={modelFileName(selectedModel.path)}>{modelDisplayName(selectedModel.path)}</strong>
           </div>
         ) : (
           <div className="load-model-dialog__search">
@@ -256,7 +258,7 @@ export function LoadModelDialog({
                     }
                   >
                     <div className="load-model-dialog__catalog-name">
-                      <strong title={model.name}>{model.name}</strong>
+                       <strong title={modelFileName(model.path)}>{modelDisplayName(model.path)}</strong>
                       <div className="load-model-dialog__capabilities">
                         {model.quantization && model.quantization !== "Unknown" ? (
                           <span

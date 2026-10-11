@@ -2,8 +2,9 @@ use super::huggingface::{
     DownloadProgress, DownloadedModel, HuggingFaceFile, HuggingFaceModelSummary,
     HuggingFaceRepoDetails,
 };
+use super::{DownloadGuard, STOPPED_DOWNLOAD, cleanup_partial};
 use crate::core::models::{CapabilityHints, inspect_gguf, resolve_models_dir};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, future::Abortable};
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -272,6 +273,7 @@ pub async fn download_file(
     filename: &str,
     tags: Vec<String>,
     pipeline_tag: Option<String>,
+    mut cancellation: DownloadGuard,
 ) -> Result<DownloadedModel, String> {
     validate_repo_id(repo_id)?;
     validate_gguf_filename(filename)?;
@@ -296,46 +298,21 @@ pub async fn download_file(
 
     let download_id = format!("modelscope::{repo_id}::{filename}");
     let url = resolve_download_url(repo_id, filename)?;
-    let response = client()?
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| format!("failed to start ModelScope download: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("failed to download ModelScope model: {error}"))?;
-
-    let total_bytes = response.content_length();
-    let mut stream = response.bytes_stream();
-    let mut file = fs::File::create(&partial)
-        .await
-        .map_err(|error| format!("failed to create partial download: {error}"))?;
-    let mut downloaded_bytes = 0_u64;
-
-    emit_progress(
-        app,
-        DownloadProgress {
-            download_id: download_id.clone(),
-            repo_id: repo_id.to_string(),
-            filename: filename.to_string(),
-            downloaded_bytes,
-            total_bytes,
-            status: "downloading",
-        },
-    );
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = match chunk {
-            Ok(chunk) => chunk,
-            Err(error) => {
-                let _ = fs::remove_file(&partial).await;
-                return Err(format!("ModelScope download interrupted: {error}"));
-            }
-        };
-
-        file.write_all(&chunk)
+    let transfer = async {
+        let response = client()?
+            .get(url)
+            .send()
             .await
-            .map_err(|error| format!("failed to write ModelScope download: {error}"))?;
-        downloaded_bytes += chunk.len() as u64;
+            .map_err(|error| format!("failed to start ModelScope download: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("failed to download ModelScope model: {error}"))?;
+
+        let total_bytes = response.content_length();
+        let mut stream = response.bytes_stream();
+        let mut file = fs::File::create(&partial)
+            .await
+            .map_err(|error| format!("failed to create partial download: {error}"))?;
+        let mut downloaded_bytes = 0_u64;
 
         emit_progress(
             app,
@@ -348,13 +325,67 @@ pub async fn download_file(
                 status: "downloading",
             },
         );
-    }
 
-    file.flush()
-        .await
-        .map_err(|error| format!("failed to flush ModelScope download: {error}"))?;
-    drop(file);
+        while let Some(chunk) = stream.next().await {
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    let _ = fs::remove_file(&partial).await;
+                    return Err(format!("ModelScope download interrupted: {error}"));
+                }
+            };
 
+            file.write_all(&chunk)
+                .await
+                .map_err(|error| format!("failed to write ModelScope download: {error}"))?;
+            downloaded_bytes += chunk.len() as u64;
+
+            emit_progress(
+                app,
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    repo_id: repo_id.to_string(),
+                    filename: filename.to_string(),
+                    downloaded_bytes,
+                    total_bytes,
+                    status: "downloading",
+                },
+            );
+        }
+
+        file.flush()
+            .await
+            .map_err(|error| format!("failed to flush ModelScope download: {error}"))?;
+        drop(file);
+
+        Ok::<(u64, Option<u64>), String>((downloaded_bytes, total_bytes))
+    };
+    let transfer_result = Abortable::new(transfer, cancellation.take_registration()).await;
+    drop(cancellation);
+    let (downloaded_bytes, total_bytes) = match transfer_result {
+        Ok(Ok(completed)) => completed,
+        Ok(Err(error)) => {
+            cleanup_partial(&partial).await?;
+            return Err(error);
+        }
+        Err(_) => {
+            cleanup_partial(&partial).await?;
+            emit_progress(
+                app,
+                DownloadProgress {
+                    download_id,
+                    repo_id: repo_id.to_string(),
+                    filename: filename.to_string(),
+                    downloaded_bytes: 0,
+                    total_bytes: None,
+                    status: "stopped",
+                },
+            );
+            return Err(STOPPED_DOWNLOAD.to_string());
+        }
+    };
+
+    // Do not interrupt replacement of an existing completed GGUF.
     if fs::try_exists(&destination).await.unwrap_or(false) {
         fs::remove_file(&destination)
             .await

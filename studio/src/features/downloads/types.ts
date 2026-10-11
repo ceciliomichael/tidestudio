@@ -53,7 +53,7 @@ export type DownloadProgress = {
   filename: string;
   downloadedBytes: number;
   totalBytes: number | null;
-  status: "downloading" | "completed";
+  status: "downloading" | "stopping" | "stopped" | "completed";
 };
 
 export type DownloadActivity = DownloadProgress & {

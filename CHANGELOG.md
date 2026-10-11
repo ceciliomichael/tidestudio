@@ -4,6 +4,23 @@ All notable changes to TideStudio will be documented here.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-12
+
+### Added
+
+- Added Stop actions for active Hugging Face and ModelScope model downloads in Model Search and Downloads. Stopping a transfer interrupts the network download, cleans up its partial file, and allows the file to be downloaded again.
+
+### Changed
+
+- The Models page and Load Model dialog now show each GGUF filename without the `.gguf` extension, rather than the model name embedded in its metadata.
+- API model IDs and the Copy Default Identifier action now use that same filename without its extension, instead of a repository-relative path.
+- Deleting a model now removes its containing folder, including associated `mmproj` files, other GGUF files, and saved model settings. A GGUF stored directly in the models root is deleted individually along with its settings sidecar.
+
+### Fixed
+
+- Download progress percentages now use readable white text on the green progress surface in both light and dark themes.
+- Model-folder deletion is blocked while any model from the folder is loaded, and conflicting filenames no longer cause an API or just-in-time request to select the wrong model.
+
 ## [0.1.1] - 2026-10-12
 
 ### Added

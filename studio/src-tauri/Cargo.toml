@@ -1,6 +1,6 @@
 [package]
 name = "tidestudio"
-version = "0.1.1"
+version = "0.1.2"
 description = "A focused llama-server desktop manager"
 authors = ["TideStudio"]
 edition = "2024"

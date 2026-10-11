@@ -1,5 +1,36 @@
 export type ModelCategory = "LLM" | "Embedding" | "Drafter" | "DECISION";
 
+export function modelFileName(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
+}
+
+export function modelDisplayName(path: string): string {
+  return modelFileName(path).replace(/\.gguf$/i, "");
+}
+
+export function modelFolderPath(path: string): string {
+  const separator = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return separator >= 0 ? path.slice(0, separator) : "";
+}
+
+function normalizedModelPath(path: string): string {
+  const normalized = path.replaceAll("\\", "/").toLowerCase();
+  const withoutVerbatimPrefix = normalized.startsWith("//?/unc/")
+    ? `//${normalized.slice(8)}`
+    : normalized.startsWith("//?/")
+      ? normalized.slice(4)
+      : normalized;
+  return withoutVerbatimPrefix.replace(/\/+$/, "");
+}
+
+export function sameModelPath(left: string, right: string): boolean {
+  return normalizedModelPath(left) === normalizedModelPath(right);
+}
+
+export function modelIsInFolder(path: string, folder: string): boolean {
+  return normalizedModelPath(path).startsWith(`${normalizedModelPath(folder)}/`);
+}
+
 export type CatalogModel = {
   id: string;
   name: string;

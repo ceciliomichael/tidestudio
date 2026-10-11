@@ -11,13 +11,20 @@ import { createPortal } from "react-dom";
 import { Button } from "../../components/ui/Button";
 import { IconButton } from "../../components/ui/IconButton";
 import { Modal } from "../../components/ui/Modal";
-import type { CatalogModel } from "./types";
+import {
+  modelDisplayName,
+  modelFileName,
+  modelFolderPath,
+  sameModelPath,
+  type CatalogModel,
+} from "./types";
 
 type Props = {
   models: CatalogModel[];
   selectedId: string;
   onSelect: (id: string) => void;
   onDelete: (model: CatalogModel) => Promise<void>;
+  modelsRoot: string | null;
 };
 
 function normalizedPath(path: string) {
@@ -32,7 +39,7 @@ function managedRelativePath(path: string) {
 }
 
 function modelIdentifier(model: CatalogModel) {
-  return managedRelativePath(model.path).replace(/\.gguf$/i, "");
+  return modelDisplayName(model.path);
 }
 
 function repositoryLink(model: CatalogModel) {
@@ -135,7 +142,7 @@ function ModelActionsMenu({
         ref={triggerRef}
         className="model-actions__trigger"
         icon={MoreHorizontal}
-        label={`Actions for ${model.name}`}
+        label={`Actions for ${modelDisplayName(model.path)}`}
         size={14}
         onClick={() => setOpen((current) => !current)}
       />
@@ -221,6 +228,7 @@ export function ModelLibrary({
   selectedId,
   onSelect,
   onDelete,
+  modelsRoot,
 }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<CatalogModel | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -229,6 +237,11 @@ export function ModelLibrary({
   const dataBodyRef = useRef<HTMLDivElement>(null);
   const actionsBodyRef = useRef<HTMLDivElement>(null);
   const horizontalScrollRef = useRef<HTMLDivElement>(null);
+  const deleteFolder = deleteTarget ? modelFolderPath(deleteTarget.path) : "";
+  const deleteRootFile =
+    deleteFolder !== "" &&
+    modelsRoot !== null &&
+    sameModelPath(deleteFolder, modelsRoot);
 
   function handleDataScroll() {
     const dataBody = dataBodyRef.current;
@@ -270,6 +283,8 @@ export function ModelLibrary({
     try {
       await onDelete(deleteTarget);
       setDeleteTarget(null);
+    } catch {
+      // The parent surfaces the error; keep this confirmation open for retry.
     } finally {
       setDeleting(false);
     }
@@ -335,7 +350,7 @@ export function ModelLibrary({
                     }}
                   >
                     <span className="model-catalog-row__model">
-                      <strong title={model.name}>{model.name}</strong>
+                      <strong title={modelFileName(model.path)}>{modelDisplayName(model.path)}</strong>
                     </span>
 
                     <span title={model.publisher}>{model.publisher}</span>
@@ -404,10 +419,19 @@ export function ModelLibrary({
       >
         <div className="model-delete-modal__body">
           <p>
-            Delete <strong>{deleteTarget?.name}</strong> from TideStudio&apos;s
-            managed model library?
+            Delete <strong>{deleteTarget ? modelDisplayName(deleteTarget.path) : ""}</strong> from
+            TideStudio&apos;s managed model library?
           </p>
-          <p className="model-delete-modal__path">{deleteTarget?.path}</p>
+          <p>
+            {deleteRootFile
+              ? "This file is directly in the models root. Only its GGUF file and settings sidecar will be deleted; other files remain."
+              : modelsRoot === null
+                ? "Files in a dedicated model folder are deleted together, including mmproj and sibling GGUFs. A GGUF stored directly in the models root is deleted individually."
+                : "The entire containing folder and all of its contents will be permanently deleted, including other GGUF files, mmproj files, and settings."}
+          </p>
+          <p className="model-delete-modal__path">
+            {deleteRootFile ? deleteTarget?.path : deleteFolder}
+          </p>
         </div>
         <div className="model-delete-modal__actions">
           <Button

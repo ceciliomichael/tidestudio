@@ -292,12 +292,42 @@ h2 {
   flex: 0 0 auto;
   border-radius: 7px;
   padding: 4px 7px;
-  color: var(--color-brand);
-  background: var(--color-brand-soft);
+  color: #fff;
+  background: var(--button-primary-background);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
   text-align: center;
+}
+
+.download-activity-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.download-activity-card__stop {
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  padding: 4px 8px;
+  color: var(--color-foreground);
+  background: var(--color-surface-muted);
+  font-size: 12px;
+}
+
+.download-activity-card__stop:hover:not(:disabled) {
+  background: var(--color-sidebar-hover);
+}
+
+.download-activity-card__stop:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .download-activity-card__track {
@@ -4598,6 +4628,16 @@ h2 {
 
 .download-option-card__copy > strong {
   font-size: 13px;
+}
+
+.download-option-card__progress.ui-button--primary:disabled {
+  color: #fff;
+  background: var(--button-primary-background);
+  opacity: 1;
+}
+
+.download-option-card__progress.ui-button--primary {
+  color: #fff;
 }
 
 .download-option-card__copy span {

@@ -14,7 +14,12 @@ import type {
 } from "../features/downloads/types";
 import { ModelLibrary } from "../features/models/ModelLibrary";
 import { ModelInspector } from "../features/models/ModelInspector";
-import type { CatalogModel } from "../features/models/types";
+import {
+  modelFolderPath,
+  modelIsInFolder,
+  sameModelPath,
+  type CatalogModel,
+} from "../features/models/types";
 import { ServerDashboard } from "../features/server/ServerDashboard";
 import {
   createDefaultModelConfig,
@@ -47,6 +52,7 @@ import {
   setUiPreference,
   startServer,
   stopServer,
+  stopModelDownload,
   updateServerInference,
   type ModelInfo,
   type ModelsDirectoryInfo,
@@ -246,6 +252,7 @@ export function App({ initialPanelPreferences }: AppProps) {
   const [downloadActivities, setDownloadActivities] = useState<
     DownloadActivity[]
   >([]);
+  const downloadAttemptsRef = useRef<Record<string, number>>({});
   const downloadSamplesRef = useRef<
     Record<
       string,
@@ -435,7 +442,7 @@ export function App({ initialPanelPreferences }: AppProps) {
 
       if (
         previous &&
-        progress.status !== "completed" &&
+        progress.status === "downloading" &&
         elapsedMs < 400
       ) {
         return;
@@ -449,7 +456,7 @@ export function App({ initialPanelPreferences }: AppProps) {
           elapsedSeconds
         : 0;
       const speed =
-        progress.status === "completed"
+        progress.status !== "downloading"
           ? 0
           : previous?.speed
             ? previous.speed * 0.6 + instantSpeed * 0.4
@@ -465,6 +472,13 @@ export function App({ initialPanelPreferences }: AppProps) {
         const existing = current.find(
           (activity) => activity.downloadId === progress.downloadId,
         );
+        if (existing?.status === "stopping" && progress.status === "downloading") {
+          return current;
+        }
+        if (existing?.status === "downloading" && progress.status === "stopped") {
+          // A previous attempt's Stop event arrived after a new attempt began.
+          return current;
+        }
         const next: DownloadActivity = {
           ...progress,
           speedBytesPerSecond: speed,
@@ -481,7 +495,7 @@ export function App({ initialPanelPreferences }: AppProps) {
           : [next, ...current];
       });
 
-      if (progress.status === "completed") {
+      if (progress.status === "completed" || progress.status === "stopped") {
         delete downloadSamplesRef.current[progress.downloadId];
       }
     }).then((unlisten) => {
@@ -773,10 +787,15 @@ export function App({ initialPanelPreferences }: AppProps) {
       }
 
       await deleteModel(model.path);
+      const directory = modelFolderPath(model.path);
+      const rootFile =
+        modelsDirectory !== null && sameModelPath(directory, modelsDirectory.path);
       setCatalogConfigs((current) => {
-        const next = { ...current };
-        delete next[model.path];
-        return next;
+        return Object.fromEntries(
+          Object.entries(current).filter(([path]) =>
+            rootFile ? !sameModelPath(path, model.path) : !modelIsInFolder(path, directory),
+          ),
+        );
       });
       if (matchingServers.length > 0) {
         await refreshServers();
@@ -986,6 +1005,14 @@ export function App({ initialPanelPreferences }: AppProps) {
 
     const downloadId =
       `${huggingFaceRepo.source}::${huggingFaceRepo.repoId}::${file.filename}`;
+    if (downloadActivities.some((activity) =>
+      activity.downloadId === downloadId &&
+      (activity.status === "downloading" || activity.status === "stopping")
+    )) {
+      return;
+    }
+    const attempt = (downloadAttemptsRef.current[downloadId] ?? 0) + 1;
+    downloadAttemptsRef.current[downloadId] = attempt;
     const startedAt = Date.now();
     const initialProgress: DownloadProgress = {
       downloadId,
@@ -1030,6 +1057,9 @@ export function App({ initialPanelPreferences }: AppProps) {
         huggingFaceRepo.tags,
         huggingFaceRepo.pipelineTag,
       );
+      if (downloadAttemptsRef.current[downloadId] !== attempt) {
+        return;
+      }
       setLastDownloadedModel(downloaded);
       setDownloadActivities((current) =>
         current.map((activity) =>
@@ -1049,16 +1079,58 @@ export function App({ initialPanelPreferences }: AppProps) {
       await refreshLocalModels();
       setError(null);
     } catch (cause) {
+      if (downloadAttemptsRef.current[downloadId] !== attempt) {
+        return;
+      }
       delete downloadSamplesRef.current[downloadId];
+      if (String(cause).includes("Model download stopped")) {
+        setDownloadActivities((current) =>
+          current.map((activity) =>
+            activity.downloadId === downloadId
+              ? { ...activity, status: "stopped", speedBytesPerSecond: 0 }
+              : activity,
+          ),
+        );
+        setError(null);
+      } else {
+        setDownloadActivities((current) =>
+          current.filter((activity) => activity.downloadId !== downloadId),
+        );
+        setError(String(cause));
+      }
+    }
+  }
+
+  async function handleStopDownload(downloadId: string) {
+    setDownloadActivities((current) =>
+      current.map((activity) =>
+        activity.downloadId === downloadId && activity.status === "downloading"
+          ? { ...activity, status: "stopping", speedBytesPerSecond: 0 }
+          : activity,
+      ),
+    );
+
+    try {
+      await stopModelDownload(downloadId);
+      setError(null);
+    } catch (cause) {
+      if (String(cause).includes("no longer active")) {
+        // Completion won the race with the Stop click.
+        return;
+      }
       setDownloadActivities((current) =>
-        current.filter((activity) => activity.downloadId !== downloadId),
+        current.map((activity) =>
+          activity.downloadId === downloadId && activity.status === "stopping"
+            ? { ...activity, status: "downloading" }
+            : activity,
+        ),
       );
       setError(String(cause));
     }
   }
 
   const activeDownloadCount = downloadActivities.filter(
-    (activity) => activity.status === "downloading",
+    (activity) => activity.status === "downloading" || activity.status === "stopping",
   ).length;
 
   function handlePanelPreferencesChange(
@@ -1150,6 +1222,7 @@ export function App({ initialPanelPreferences }: AppProps) {
             ) : activePage === "models" ? (
               <ModelLibrary
                 models={localModels}
+                modelsRoot={modelsDirectory?.path ?? null}
                 selectedId={catalogSelectedId}
                 onSelect={setCatalogSelectedId}
                 onDelete={handleDeleteCatalogModel}
@@ -1157,6 +1230,7 @@ export function App({ initialPanelPreferences }: AppProps) {
             ) : activePage === "downloads" ? (
               <DownloadActivityPage
                 activities={downloadActivities}
+                onStopDownload={(id) => void handleStopDownload(id)}
                 onClearCompleted={() =>
                   setDownloadActivities((current) =>
                     current.filter((activity) => activity.status !== "completed"),
@@ -1215,6 +1289,7 @@ export function App({ initialPanelPreferences }: AppProps) {
                 downloaded={lastDownloadedModel}
                 onClose={handleCloseHuggingFaceDetails}
                 onDownload={(file) => void handleDownloadHuggingFaceFile(file)}
+                onStopDownload={(id) => void handleStopDownload(id)}
               />
             )}
           </aside>

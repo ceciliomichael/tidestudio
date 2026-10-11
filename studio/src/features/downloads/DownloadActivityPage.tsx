@@ -1,10 +1,11 @@
-import { CheckCircle2, Download } from "lucide-react";
+import { CheckCircle2, Download, X } from "lucide-react";
 import { useMemo } from "react";
 import type { DownloadActivity } from "./types";
 
 type Props = {
   activities: DownloadActivity[];
   onClearCompleted: () => void;
+  onStopDownload: (downloadId: string) => void;
 };
 
 function formatBytes(bytes: number | null): string {
@@ -28,9 +29,13 @@ function displayName(repoId: string): string {
   return repoId.split("/").pop() || repoId;
 }
 
-export function DownloadActivityPage({ activities, onClearCompleted }: Props) {
+export function DownloadActivityPage({ activities, onClearCompleted, onStopDownload }: Props) {
   const active = useMemo(
-    () => activities.filter((activity) => activity.status === "downloading"),
+    () => activities.filter((activity) => activity.status === "downloading" || activity.status === "stopping"),
+    [activities],
+  );
+  const stopped = useMemo(
+    () => activities.filter((activity) => activity.status === "stopped"),
     [activities],
   );
   const completed = useMemo(
@@ -72,9 +77,21 @@ export function DownloadActivityPage({ activities, onClearCompleted }: Props) {
                             <span title={activity.filename}>{activity.filename}</span>
                           </div>
                         </div>
-                        <span className="download-activity-card__percent">
-                          {percent === null ? "..." : `${percent}%`}
-                        </span>
+                        <div className="download-activity-card__actions">
+                          <span className="download-activity-card__percent">
+                            {activity.status === "stopping" ? "Stopping..." : percent === null ? "..." : `${percent}%`}
+                          </span>
+                          <button
+                            type="button"
+                            className="download-activity-card__stop"
+                            disabled={activity.status === "stopping"}
+                            onClick={() => onStopDownload(activity.downloadId)}
+                            aria-label={`Stop downloading ${activity.filename}`}
+                          >
+                            <X size={13} strokeWidth={2} aria-hidden="true" />
+                            Stop
+                          </button>
+                        </div>
                       </div>
                       <div
                         className="download-activity-card__track"
@@ -110,6 +127,27 @@ export function DownloadActivityPage({ activities, onClearCompleted }: Props) {
               <div className="download-activity-page__empty">No active downloads.</div>
             )}
           </section>
+
+          {stopped.length > 0 ? (
+            <section className="download-activity-page__section" aria-label="Stopped downloads">
+              <div className="download-activity-page__section-heading">
+                <h2>Stopped</h2>
+                <span>{stopped.length}</span>
+              </div>
+              <div className="download-activity-completed">
+                {stopped.map((activity) => (
+                  <div className="download-activity-completed__row" key={activity.downloadId}>
+                    <X size={18} strokeWidth={1.9} aria-hidden="true" />
+                    <div>
+                      <strong title={activity.repoId}>{displayName(activity.repoId)}</strong>
+                      <span title={activity.filename}>{activity.filename}</span>
+                    </div>
+                    <span>Stopped</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="download-activity-page__section" aria-label="Completed downloads">
             <div className="download-activity-page__section-heading">

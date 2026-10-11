@@ -187,3 +187,6 @@ export const downloadModelScopeFile = (
     tags,
     pipelineTag,
   });
+
+export const stopModelDownload = (downloadId: string) =>
+  invoke<void>("stop_model_download", { downloadId });

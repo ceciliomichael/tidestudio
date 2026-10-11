@@ -329,6 +329,12 @@ pub(crate) async fn start_server_with_origin(
                 .into_iter()
                 .find(|status| status.running && status.model_id == config.model_id)
             {
+                if existing.model_path != config.model_path {
+                    return Err(format!(
+                        "model ID '{}' is already in use by another GGUF; use unique filenames",
+                        config.model_id
+                    ));
+                }
                 if !jit {
                     servers.make_manual(existing.port);
                 }

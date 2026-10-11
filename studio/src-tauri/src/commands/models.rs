@@ -98,11 +98,15 @@ pub async fn save_model_settings(model_path: String, settings: Value) -> Result<
 #[tauri::command]
 pub fn delete_model(app: tauri::AppHandle, model_path: String) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
-    if servers.contains_model_path(&model_path) {
-        return Err("stop the model before deleting it".to_string());
-    }
-    drop(servers);
+    let mut servers = state.servers.lock().map_err(|_| "server lock poisoned")?;
+    let running_paths = servers
+        .list()?
+        .into_iter()
+        .filter(|server| server.running)
+        .map(|server| server.model_path)
+        .collect::<Vec<_>>();
 
-    delete_managed_model(&model_path)
+    // Keep the registry locked until removal completes so a worker cannot start
+    // from this directory between the running-model check and the deletion.
+    delete_managed_model(&model_path, &running_paths)
 }

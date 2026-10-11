@@ -3,12 +3,14 @@ mod core;
 mod tray;
 
 use core::{
-    backends::llama_cpp::LlamaCppBackend, gateway::GatewayManager, servers::ServerRegistry,
+    backends::llama_cpp::LlamaCppBackend, downloads::DownloadCancellation, gateway::GatewayManager,
+    servers::ServerRegistry,
 };
-use std::sync::{Mutex, atomic::AtomicBool};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use tauri::RunEvent;
 
 pub struct AppState {
+    pub downloads: Arc<DownloadCancellation>,
     pub servers: Mutex<ServerRegistry>,
     pub gateway: Mutex<GatewayManager>,
     pub gateway_port: Mutex<u16>,
@@ -20,6 +22,7 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
+            downloads: Arc::new(DownloadCancellation::default()),
             servers: Mutex::new(ServerRegistry::new(Box::new(LlamaCppBackend))),
             gateway: Mutex::new(GatewayManager::default()),
             gateway_port: Mutex::new(3456),
@@ -64,6 +67,7 @@ pub fn run() {
             commands::downloads::search_modelscope_models,
             commands::downloads::modelscope_model_files,
             commands::downloads::download_modelscope_file,
+            commands::downloads::stop_model_download,
             commands::models::list_models,
             commands::models::get_models_directory,
             commands::models::set_models_directory,

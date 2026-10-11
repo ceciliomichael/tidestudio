@@ -1,35 +1,70 @@
 use crate::core::{
     config::ServerConfig,
-    models::{discover_models, load_model_settings, ModelInfo},
+    models::{ModelInfo, discover_models, load_model_settings},
     paths::resolve_models_dir,
 };
-use serde_json::{json, Value};
-use std::path::Path;
+use serde_json::{Value, json};
+use std::{collections::HashMap, path::Path};
+
+fn model_id_from_file(file: &Path) -> Result<String, String> {
+    let is_gguf = file
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"));
+    if !is_gguf {
+        return Err("model ID requires a GGUF file".to_string());
+    }
+
+    file.file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "model has no valid filename".to_string())
+}
 
 pub fn model_id(path: &str) -> Result<String, String> {
     let root = resolve_models_dir()?
         .canonicalize()
         .map_err(|e| e.to_string())?;
     let file = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
-    let relative = file
-        .strip_prefix(root)
+    file.strip_prefix(root)
         .map_err(|_| "model is outside the managed directory")?;
-    let id = relative.to_string_lossy().replace('\\', "/");
-    Ok(id.strip_suffix(".gguf").unwrap_or(&id).to_string())
+    model_id_from_file(&file)
 }
 
 pub fn installed_ids() -> Result<Vec<String>, String> {
-    discover_models()?
+    let ids = discover_models()?
         .iter()
         .map(|model| model_id(&model.path))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(unambiguous_ids(ids))
+}
+
+fn unambiguous_ids(ids: Vec<String>) -> Vec<String> {
+    // The API identifies models by filename, so do not advertise ambiguous
+    // filenames for JIT loads. An ambiguous ID could start the wrong GGUF.
+    let mut counts = HashMap::new();
+    for id in &ids {
+        *counts.entry(id.clone()).or_insert(0_usize) += 1;
+    }
+    ids.into_iter()
+        .filter(|id| counts.get(id) == Some(&1))
         .collect()
 }
 
 pub fn config_for_id(id: &str) -> Result<ServerConfig, String> {
-    let model = discover_models()?
+    let mut models = discover_models()?
         .into_iter()
-        .find(|model| model_id(&model.path).as_deref() == Ok(id))
+        .filter(|model| model_id(&model.path).as_deref() == Ok(id));
+    let model = models
+        .next()
         .ok_or_else(|| format!("model is not installed: {id}"))?;
+    if models.next().is_some() {
+        return Err(format!(
+            "multiple installed GGUF files have the model ID '{id}'; use unique filenames"
+        ));
+    }
 
     build_config(&model)
 }
@@ -135,4 +170,34 @@ fn build_config(model: &ModelInfo) -> Result<ServerConfig, String> {
     }
 
     serde_json::from_value(value).map_err(|e| format!("invalid model launch settings: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_id_uses_only_gguf_filename_without_extension() {
+        assert_eq!(
+            model_id_from_file(Path::new("publisher/repo/Model-Q4_K_M.gguf")).unwrap(),
+            "Model-Q4_K_M"
+        );
+        assert_eq!(
+            model_id_from_file(Path::new("publisher/other/Model-Q4_K_M.GGUF")).unwrap(),
+            "Model-Q4_K_M"
+        );
+        assert!(model_id_from_file(Path::new("publisher/repo/model.bin")).is_err());
+    }
+
+    #[test]
+    fn jit_catalog_excludes_ambiguous_filename_ids() {
+        assert_eq!(
+            unambiguous_ids(vec![
+                "Model-Q4".to_string(),
+                "Model-Q8".to_string(),
+                "Model-Q4".to_string(),
+            ]),
+            vec!["Model-Q8"]
+        );
+    }
 }

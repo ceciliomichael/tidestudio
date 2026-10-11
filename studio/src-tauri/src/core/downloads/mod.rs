@@ -1,6 +1,8 @@
+mod cancellation;
 mod huggingface;
 mod modelscope;
 
+pub use cancellation::{DownloadCancellation, DownloadGuard, STOPPED_DOWNLOAD, cleanup_partial};
 pub use huggingface::{
     DownloadedModel, HuggingFaceModelSummary, HuggingFaceRepoDetails, download_file, model_files,
     search_models,

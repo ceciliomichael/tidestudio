@@ -35,6 +35,7 @@ type Props = {
   downloaded: DownloadedModel | null;
   onClose: () => void;
   onDownload: (file: HuggingFaceFile) => void;
+  onStopDownload: (downloadId: string) => void;
 };
 
 type HastNode = {
@@ -272,11 +273,13 @@ function DownloadOptionSelector({
   files,
   activities,
   onDownload,
+  onStopDownload,
 }: {
   repo: HuggingFaceRepoDetails;
   files: HuggingFaceFile[];
   activities: DownloadActivity[];
   onDownload: (file: HuggingFaceFile) => void;
+  onStopDownload: (downloadId: string) => void;
 }) {
   const [selectedFilename, setSelectedFilename] = useState(files[0]?.filename ?? "");
   const file = files.find((candidate) => candidate.filename === selectedFilename) ?? files[0];
@@ -286,6 +289,7 @@ function DownloadOptionSelector({
     repo.source + "::" + repo.repoId + "::" + file.filename;
   const activity = activities.find((candidate) => candidate.downloadId === downloadId);
   const downloading = activity?.status === "downloading";
+  const stopping = activity?.status === "stopping";
   const isDownloaded = file.downloaded || activity?.status === "completed";
   const percent = activity ? progressPercent(activity) : null;
 
@@ -328,16 +332,25 @@ function DownloadOptionSelector({
       <Button
         variant="primary"
         size="compact"
-        disabled={downloading || isDownloaded}
-        onClick={() => onDownload(file)}
+        className={downloading || stopping ? "download-option-card__progress" : ""}
+        disabled={stopping || isDownloaded}
+        onClick={() => {
+          if (downloading) {
+            onStopDownload(downloadId);
+          } else {
+            onDownload(file);
+          }
+        }}
       >
-        {isDownloaded ? null : (
+        {downloading || stopping ? (
+          <X size={12} strokeWidth={2} aria-hidden="true" />
+        ) : isDownloaded ? null : (
           <Download size={12} strokeWidth={2} aria-hidden="true" />
         )}
         {downloading
-          ? percent === null
-            ? "..."
-            : percent + "%"
+          ? `Stop · ${percent === null ? "..." : percent + "%"}`
+          : stopping
+            ? "Stopping..."
           : isDownloaded
             ? "Downloaded"
             : "Download"}
@@ -353,6 +366,7 @@ export function DownloadInspector({
   downloaded,
   onClose,
   onDownload,
+  onStopDownload,
 }: Props) {
   if (loading) {
     return (
@@ -486,6 +500,7 @@ export function DownloadInspector({
                   files={modelFiles}
                   activities={activities}
                   onDownload={onDownload}
+                  onStopDownload={onStopDownload}
                 />
               )}
             </div>
@@ -505,6 +520,7 @@ export function DownloadInspector({
                   files={projectorFiles}
                   activities={activities}
                   onDownload={onDownload}
+                  onStopDownload={onStopDownload}
                 />
               </div>
             </div>
