@@ -17,6 +17,8 @@ pub enum ServerLifecycle {
 #[serde(rename_all = "camelCase")]
 pub struct ServerStatus {
     pub backend: String,
+    pub runtime_id: String,
+    pub runtime_fallback: Option<String>,
     pub model_path: String,
     pub model_id: String,
     pub model_name: String,
@@ -45,6 +47,8 @@ fn process_memory_bytes(pid: u32) -> u64 {
 struct RegisteredServer {
     jit: bool,
     backend: String,
+    runtime_id: String,
+    runtime_fallback: Option<String>,
     model_path: String,
     model_id: String,
     model_name: String,
@@ -103,8 +107,12 @@ impl ServerRegistry {
         let inference_defaults = InferenceDefaults::from(&config);
         let port = config.port;
         let instance = self.backend.start(&config)?;
+        let runtime_id = instance.runtime_id().to_string();
+        let runtime_fallback = instance.runtime_fallback().map(str::to_string);
         let status = ServerStatus {
             backend: backend.clone(),
+            runtime_id: runtime_id.clone(),
+            runtime_fallback: runtime_fallback.clone(),
             model_path: model_path.clone(),
             model_id: model_id.clone(),
             model_name: model_name.clone(),
@@ -125,6 +133,8 @@ impl ServerRegistry {
             RegisteredServer {
                 jit,
                 backend,
+                runtime_id,
+                runtime_fallback,
                 model_path,
                 model_id,
                 model_name,
@@ -175,9 +185,9 @@ impl ServerRegistry {
     }
 
     pub fn jit_port(&self, model_id: &str) -> Option<u16> {
-        self.servers.iter().find_map(|(port, server)| {
-            (server.model_id == model_id && server.jit).then_some(*port)
-        })
+        self.servers
+            .iter()
+            .find_map(|(port, server)| (server.model_id == model_id && server.jit).then_some(*port))
     }
 
     pub fn contains_model_path(&self, model_path: &str) -> bool {
@@ -216,6 +226,8 @@ impl ServerRegistry {
 
         Ok(ServerStatus {
             backend: server.backend,
+            runtime_id: server.runtime_id,
+            runtime_fallback: server.runtime_fallback,
             model_path: server.model_path,
             model_id: server.model_id,
             model_name: server.model_name,
@@ -285,6 +297,8 @@ impl ServerRegistry {
         let running = server.instance.is_running()?;
         Ok(ServerStatus {
             backend: server.backend.clone(),
+            runtime_id: server.runtime_id.clone(),
+            runtime_fallback: server.runtime_fallback.clone(),
             model_path: server.model_path.clone(),
             model_id: server.model_id.clone(),
             model_name: server.model_name.clone(),
@@ -361,6 +375,7 @@ mod tests {
 
     fn config() -> ServerConfig {
         ServerConfig {
+            runtime_id: "auto".to_string(),
             model_path: "model.gguf".to_string(),
             model_name: "Laya".to_string(),
             model_category: "DECISION".to_string(),

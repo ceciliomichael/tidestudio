@@ -1,6 +1,6 @@
 import { ArrowLeft, Settings2 } from "lucide-react";
 
-export type SettingsSectionId = "general" | "configuration";
+export type SettingsSectionId = "general" | "configuration" | "runtimes";
 
 type Props = {
   selected: SettingsSectionId;
@@ -11,6 +11,7 @@ type Props = {
 const sections: { id: SettingsSectionId; title: string; description: string }[] = [
   { id: "general", title: "General", description: "Theme, language, and preferences." },
   { id: "configuration", title: "Configuration", description: "Storage paths and application configuration." },
+  { id: "runtimes", title: "Runtimes", description: "Inference engines and hardware acceleration." },
 ];
 
 export function SettingsSidebar({ selected, onSelect, onBack }: Props) {

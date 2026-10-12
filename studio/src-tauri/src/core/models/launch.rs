@@ -73,6 +73,7 @@ fn build_config(model: &ModelInfo) -> Result<ServerConfig, String> {
     let llm = model.category == "LLM";
     let mut value = json!({
         "modelPath": model.path,
+        "runtimeId": "auto",
         "modelName": model.name,
         "modelCategory": model.category,
         "modelId": model_id(&model.path)?,
@@ -138,6 +139,9 @@ fn build_config(model: &ModelInfo) -> Result<ServerConfig, String> {
             for (key, selected) in saved {
                 if defaults.contains_key(key) {
                     // An empty saved template means the embedded GGUF template.
+                    if key == "runtimeId" {
+                        continue;
+                    }
                     if key == "chatTemplate" && selected.as_str() == Some("") {
                         continue;
                     }

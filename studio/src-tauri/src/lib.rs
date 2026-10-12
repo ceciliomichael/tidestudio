@@ -55,6 +55,21 @@ pub fn run() {
             )
             .map_err(std::io::Error::other)?;
             core::paths::initialize_models_dir(stored.as_deref()).map_err(std::io::Error::other)?;
+            let llama_preference = commands::preferences::get_ui_preference_sync(
+                app.handle(),
+                core::runtimes::LLAMA_PREFERENCE_KEY,
+            )
+            .map_err(std::io::Error::other)?;
+            let prism_preference = commands::preferences::get_ui_preference_sync(
+                app.handle(),
+                core::runtimes::PRISM_PREFERENCE_KEY,
+            )
+            .map_err(std::io::Error::other)?;
+            core::runtimes::initialize_preferences(
+                llama_preference.as_deref(),
+                prism_preference.as_deref(),
+            )
+            .map_err(std::io::Error::other)?;
             commands::jit::start_controller(app.handle().clone());
             tray::setup_tray(app)?;
             Ok(())
@@ -75,8 +90,17 @@ pub fn run() {
             commands::models::load_model_settings,
             commands::models::save_model_settings,
             commands::models::delete_model,
+            commands::runtimes::get_runtimes,
+            commands::runtimes::get_runtime_preferences,
+            commands::runtimes::set_preferred_runtime,
+            commands::runtimes::install_inference_runtime,
+            commands::runtimes::cancel_inference_runtime_install,
+            commands::runtimes::remove_inference_runtime,
             commands::preferences::get_ui_preference,
             commands::preferences::set_ui_preference,
+            commands::preferences::get_completed_downloads,
+            commands::preferences::save_completed_download,
+            commands::preferences::clear_completed_downloads,
             commands::window::set_native_caption_color,
             commands::server::start_server,
             commands::server::stop_server,

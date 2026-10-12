@@ -4,6 +4,27 @@ All notable changes to TideStudio will be documented here.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-13
+
+### Added
+
+- Added Settings > Runtimes to manage optional llama.cpp CPU, Vulkan, and ROCm backends and PrismML runtimes for Bonsai models without bundling them into every Windows installer.
+- Added automatic runtime selection with separate, SQLite-persisted llama.cpp and PrismML preferences, per-engine Preferred/Use controls, and compatible fallback for new model loads.
+- Added runtime download progress, verification, cancellation, and install/remove controls.
+- Completed model downloads now persist in SQLite across app restarts until cleared.
+
+### Changed
+
+- Reworked the Runtimes page with scrollable content, matching loading skeletons, compact split-button actions, and clearer installation status and progress.
+- Loaded-model cards now display the GGUF filename without the extension, and model loading no longer exposes per-model runtime selectors.
+- Increased the resizable left navigation panel's maximum width to 380px while keeping its existing default width.
+
+### Fixed
+
+- Restored the Models table's Actions header and tightened its spacing near the inspector panel.
+- Fixed runtime action menus appearing scrollable, oversized, or pre-highlighting Use when opened with the mouse.
+- Fixed runtime preference controls and Bundled CUDA's Preferred state using inconsistent button styling.
+
 ## [0.1.3] - 2026-10-12
 
 ### Changed

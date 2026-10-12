@@ -26,6 +26,20 @@ Runtime binaries are separate from backend abstractions. llama.cpp binaries live
 
 Workspace-managed GGUF files default to the user's `%USERPROFILE%\\.tidestudio\\models` directory on Windows. The effective models root is process-wide and initialized before frontend model discovery; a custom root may be selected from Settings > Configuration and is persisted in SQLite.
 
+## Optional inference runtimes
+
+Model workers select an inference engine from GGUF compatibility, then prefer the engine-specific runtime chosen in Settings > Runtimes. Separate llama.cpp and PrismML preferences use versioned SQLite `ui_preferences` keys. Defaults are `auto`; preferences are restored synchronously before the JIT controller starts. Selecting a runtime requires the variant to be installed with a usable CPU or detected GPU device. Changes take effect on new loads only; existing workers retain their running binary. An unavailable or incompatible preference falls back to a compatible runtime and records a reason on the server status for display on the loaded model card. Model load dialogs and inspectors have no per-model runtime override; legacy `runtimeId` values cannot override these engine preferences.
+
+Completed GGUF downloads are persisted in the existing application SQLite database in a dedicated `completed_downloads` table. The schema stores the download ID, repository, file name, measured sizes, and completion time. Startup restores only completed entries. Repeated completion notifications use an upsert, and Clear Completed deletes the records, without restoring active or stopped transfers.
+
+Runtime installation streams stage-specific progress to the frontend: preparing, downloading, verifying, extracting, and installing. For multi-archive runtimes, a bounded HEAD preflight gathers archive sizes; when all are known, cumulative downloaded bytes provide a non-resetting overall percentage. Otherwise, the UI identifies the current package and reports its measured file progress without inventing a total. GPU discovery has a four-second timeout and a short retry cache on failure; binary device enumeration also has a timeout.
+
+The Windows application retains the bundled llama.cpp CUDA runtime. Settings > Runtimes additionally installs Windows x64 CPU, Vulkan, ROCm, and PrismML variants on demand under the user's .tidestudio/runtimes directory. Separate versioned runtime directories never enter the NSIS installer. The Rust runtime catalog pins the upstream b11429 archive hashes and PrismML fork tag. PrismML archives require GitHub's published SHA-256 release asset digests.
+
+Downloads are streamed, hash-checked and extracted through temporary directories before an atomic rename. Cancellation or failure removes partial files. Windows video-controller discovery and each GPU runtime's device listing guide per-model selection. Manual loading and JIT both use automatic runtime selection regardless of legacy saved runtime IDs. Bonsai filenames, metadata names and specialized quantizations select PrismML. An installed runtime cannot be removed while any active worker uses it.
+
+All runtimes reuse the existing private llama-server worker ports and Go API gateway. A missing optional runtime causes an explicit Settings > Runtimes installation error instead of a silent background download. The bundled CUDA binary can run on CPU with GPU offload disabled, preserving a basic offline fallback on non-NVIDIA machines. MLX and Metal are not supported on Windows.
+
 ## Windows release packaging
 
 The Windows x64 NSIS build runs the existing llama.cpp bootstrap and Go API gateway build, then stages the llama server, its DLL dependencies, and the gateway into `studio/src-tauri/release-runtime/`. Tauri bundles that directory as `runtime/` beside the installed executable. Build with `npm run release:windows` from `studio/`. Generated files under `release-runtime/` are not committed.

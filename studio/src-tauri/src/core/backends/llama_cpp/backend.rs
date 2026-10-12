@@ -1,7 +1,8 @@
-use super::{manager::resolve_llama_server, process::spawn_llama_server};
+use super::process::spawn_llama_server;
 use crate::core::{
     backends::{InferenceBackend, ManagedInference},
     config::ServerConfig,
+    runtimes::select_runtime,
 };
 
 #[derive(Default)]
@@ -13,8 +14,18 @@ impl InferenceBackend for LlamaCppBackend {
     }
 
     fn start(&self, config: &ServerConfig) -> Result<Box<dyn ManagedInference>, String> {
-        let executable = resolve_llama_server()?;
-        let instance = spawn_llama_server(&executable, config)?;
+        let runtime = select_runtime(config)?;
+        let mut selected_config = config.clone();
+        selected_config.gpu_layers = runtime.gpu_layers;
+        if runtime.gpu_layers == Some(0) {
+            selected_config.flash_attention = false;
+        }
+        let instance = spawn_llama_server(
+            &runtime.executable,
+            &selected_config,
+            runtime.id,
+            runtime.fallback_reason,
+        )?;
 
         Ok(Box::new(instance))
     }

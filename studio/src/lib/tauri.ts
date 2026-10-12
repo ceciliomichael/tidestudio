@@ -55,6 +55,8 @@ export type ServerConfig = ModelConfig & {
 
 export type ServerStatus = {
   backend: string;
+  runtimeId: string;
+  runtimeFallback: string | null;
   modelPath: string;
   modelId: string;
   modelName: string;
@@ -76,6 +78,62 @@ export type ServerStartFailure = {
   modelPath: string;
   error: string;
 };
+
+export type InferenceRuntime = {
+  id: string;
+  name: string;
+  engine: string;
+  accelerator: string;
+  version: string;
+  installed: boolean;
+  outdated: boolean;
+  compatible: boolean;
+  detail: string;
+  sizeBytes: number;
+};
+
+export type RuntimePreferences = {
+  llamaCpp: string;
+  prismMl: string;
+};
+
+export const getRuntimePreferences = () =>
+  invoke<RuntimePreferences>("get_runtime_preferences");
+
+export const setPreferredRuntime = (engine: string, id: string) =>
+  invoke<RuntimePreferences>("set_preferred_runtime", { engine, id });
+
+export type RuntimeInstallProgress = {
+  id: string;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  archiveNumber: number;
+  archiveCount: number;
+  archiveName: string | null;
+  fileDownloadedBytes: number;
+  fileTotalBytes: number | null;
+  status:
+    | "preparing"
+    | "downloading"
+    | "verifying"
+    | "extracting"
+    | "installing"
+    | "installed"
+    | "cancelled"
+    | "failed";
+};
+
+export const getRuntimes = () =>
+  invoke<InferenceRuntime[]>("get_runtimes");
+
+export const installInferenceRuntime = (id: string) =>
+  invoke<void>("install_inference_runtime", { id });
+
+export const removeInferenceRuntime = (id: string) =>
+  invoke<void>("remove_inference_runtime", { id });
+
+export const cancelInferenceRuntimeInstall = (id: string) =>
+  invoke<void>("cancel_inference_runtime_install", { id });
 
 export type GatewayConfig = {
   port: number;
@@ -149,6 +207,24 @@ export const getUiPreference = (key: string) =>
 
 export const setUiPreference = (key: string, value: string) =>
   invoke<void>("set_ui_preference", { key, value });
+
+export type CompletedDownloadRecord = {
+  downloadId: string;
+  repoId: string;
+  filename: string;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  completedAt: number;
+};
+
+export const getCompletedDownloads = () =>
+  invoke<CompletedDownloadRecord[]>("get_completed_downloads");
+
+export const saveCompletedDownload = (record: CompletedDownloadRecord) =>
+  invoke<void>("save_completed_download", { record });
+
+export const clearCompletedDownloads = () =>
+  invoke<void>("clear_completed_downloads");
 
 export const searchHuggingFaceModels = (query: string) =>
   invoke<HuggingFaceModelSummary[]>("search_huggingface_models", { query });

@@ -19,9 +19,17 @@ type SharedLogs = Arc<Mutex<VecDeque<String>>>;
 pub struct LlamaCppInstance {
     child: Child,
     logs: SharedLogs,
+    runtime_id: String,
+    runtime_fallback: Option<String>,
 }
 
 impl ManagedInference for LlamaCppInstance {
+    fn runtime_id(&self) -> &str {
+        &self.runtime_id
+    }
+    fn runtime_fallback(&self) -> Option<&str> {
+        self.runtime_fallback.as_deref()
+    }
     fn pid(&self) -> u32 {
         self.child.id()
     }
@@ -58,15 +66,13 @@ impl ManagedInference for LlamaCppInstance {
 pub fn spawn_llama_server(
     executable: &Path,
     config: &ServerConfig,
+    runtime_id: &str,
+    runtime_fallback: Option<String>,
 ) -> Result<LlamaCppInstance, String> {
     let model_path = Path::new(&config.model_path);
 
     if !model_path.is_file() {
         return Err(format!("model does not exist: {}", model_path.display()));
-    }
-
-    if config.gpu_layers.is_some_and(|layers| layers > 0) {
-        ensure_cuda_available(executable)?;
     }
 
     let mut command = Command::new(executable);
@@ -133,7 +139,12 @@ pub fn spawn_llama_server(
         pipe_logs(stderr, Arc::clone(&logs), "stderr");
     }
 
-    Ok(LlamaCppInstance { child, logs })
+    Ok(LlamaCppInstance {
+        child,
+        logs,
+        runtime_id: runtime_id.to_string(),
+        runtime_fallback,
+    })
 }
 
 fn add_load_tuning_args(command: &mut Command, config: &ServerConfig) {
@@ -162,31 +173,6 @@ fn add_load_tuning_args(command: &mut Command, config: &ServerConfig) {
     if let Some(scale) = config.rope_frequency_scale {
         command.arg("--rope-freq-scale").arg(scale.to_string());
     }
-}
-
-fn ensure_cuda_available(executable: &Path) -> Result<(), String> {
-    let mut command = Command::new(executable);
-    command.arg("--list-devices");
-    hide_console(&mut command);
-
-    let output = command
-        .output()
-        .map_err(|error| format!("failed to inspect llama.cpp GPU devices: {error}"))?;
-    let device_list = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    if output.status.success()
-        && (device_list.contains("CUDA0") || device_list.to_ascii_lowercase().contains("nvidia"))
-    {
-        return Ok(());
-    }
-
-    Err(
-        "GPU offload was requested, but the bundled llama.cpp CUDA backend did not expose an NVIDIA device. Run `npm run prepare:llama` to repair the CUDA runtime."
-            .to_string(),
-    )
 }
 
 fn add_decision_runtime_args(command: &mut Command, config: &ServerConfig) {

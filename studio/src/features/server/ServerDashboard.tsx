@@ -16,7 +16,7 @@ import type {
   ServerSettings,
 } from "../../lib/config";
 import type { ServerStatus } from "../../lib/tauri";
-import type { CatalogModel } from "../models/types";
+import { modelDisplayName, type CatalogModel } from "../models/types";
 import { LoadModelDialog } from "./LoadModelDialog";
 import { ServerLogsPanel } from "./ServerLogsPanel";
 import { ServerSettingsDialog } from "./ServerSettingsDialog";
@@ -38,10 +38,6 @@ type Props = {
   onLoadModel: (model: CatalogModel, config: ModelConfig) => Promise<void>;
   onServerSettingsChange: (settings: ServerSettings) => void;
 };
-
-function fileName(path: string) {
-  return path.split(/[\\/]/).pop() || path;
-}
 
 function formatMemory(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -207,7 +203,7 @@ export function ServerDashboard({
                       </span>
                       <span className="running-model-card__model-name-badge">
                         <strong className="running-model-card__model-name">
-                          {model.name}
+                          {modelDisplayName(model.path)}
                         </strong>
                       </span>
                       {model.quantization && model.quantization !== "Unknown" ? (
@@ -263,8 +259,7 @@ export function ServerDashboard({
                 const model = allModels.find(
                   (candidate) => candidate.path === server.modelPath,
                 );
-                const modelName =
-                  model?.name || server.modelName || fileName(server.modelPath);
+                const modelName = modelDisplayName(server.modelPath);
                 const quantization = model?.quantization || server.quantization;
                 const supportsMtp = model?.supportsMtp ?? server.supportsMtp;
                 const supportsVision =
@@ -318,6 +313,15 @@ export function ServerDashboard({
                       {quantization && quantization !== "Unknown" ? (
                         <span className="running-model-card__capability">
                           {quantization}
+                        </span>
+                      ) : null}
+                      {server.runtimeFallback ? (
+                        <span
+                          className="running-model-card__capability"
+                          title={server.runtimeFallback}
+                          aria-label={server.runtimeFallback}
+                        >
+                          {server.runtimeId.split("-").pop()?.toUpperCase()} fallback
                         </span>
                       ) : null}
                       {supportsMtp ? (

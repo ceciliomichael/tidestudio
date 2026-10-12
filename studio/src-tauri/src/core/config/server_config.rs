@@ -21,6 +21,8 @@ pub enum SpeculativeMode {
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub model_path: String,
+    #[serde(default = "default_runtime_id")]
+    pub runtime_id: String,
     #[serde(default)]
     pub model_name: String,
     #[serde(default = "default_model_category")]
@@ -89,6 +91,10 @@ pub struct ServerConfig {
     pub draft_min_probability: Option<f32>,
     #[serde(default)]
     pub extra_args: Vec<String>,
+}
+
+fn default_runtime_id() -> String {
+    "auto".to_string()
 }
 
 fn default_model_category() -> String {

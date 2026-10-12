@@ -23,6 +23,8 @@ type Props<T extends string> = {
   onChange: (value: T) => void;
   menuClassName?: string;
   maxMenuHeight?: number;
+  mode?: "select" | "action";
+  disabled?: boolean;
 };
 
 export function Dropdown<T extends string>({
@@ -32,6 +34,8 @@ export function Dropdown<T extends string>({
   onChange,
   menuClassName = "",
   maxMenuHeight = 320,
+  mode = "select",
+  disabled = false,
 }: Props<T>) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -92,9 +96,9 @@ export function Dropdown<T extends string>({
       if (!trigger || !menu) return;
 
       const rect = trigger.getBoundingClientRect();
-      const gap = 8;
+      const gap = mode === "action" ? 6 : 8;
       const width = Math.min(
-        Math.max(160, rect.width),
+        Math.max(mode === "action" ? 136 : 160, rect.width),
         Math.max(0, window.innerWidth - 2 * gap),
       );
       const left = Math.max(
@@ -130,7 +134,7 @@ export function Dropdown<T extends string>({
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
-  }, [open, maxMenuHeight, options]);
+  }, [open, maxMenuHeight, mode, options]);
 
   function focusOption(index: number) {
     const boundedIndex = Math.max(0, Math.min(index, options.length - 1));
@@ -141,9 +145,15 @@ export function Dropdown<T extends string>({
     });
   }
 
-  function openMenu() {
+  function openMenu(focusFirstOption = true) {
     setOpen(true);
-    focusOption(selectedIndex);
+    if (focusFirstOption) {
+      focusOption(selectedIndex);
+    } else {
+      // Action menus opened by pointer should not pre-highlight the first item.
+      // Keyboard opening still focuses the first option for navigation.
+      setActiveIndex(-1);
+    }
   }
 
   function selectOption(option: DropdownOption<T>) {
@@ -202,28 +212,29 @@ export function Dropdown<T extends string>({
   }
 
   return (
-    <div className="ui-dropdown" ref={rootRef}>
+    <div className={mode === "action" ? "ui-dropdown ui-dropdown--action" : "ui-dropdown"} ref={rootRef}>
       <button
         className={open ? "ui-dropdown__trigger is-open" : "ui-dropdown__trigger"}
         ref={triggerRef}
         type="button"
         aria-label={ariaLabel}
-        aria-haspopup="listbox"
+        aria-haspopup={mode === "action" ? "menu" : "listbox"}
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => {
+        disabled={disabled}
+        onClick={(event) => {
           if (open) {
             setOpen(false);
           } else {
-            openMenu();
+            openMenu(mode !== "action" || event.detail === 0);
           }
         }}
         onKeyDown={handleTriggerKeyDown}
       >
-        <span>{selectedLabel}</span>
+        {mode === "select" ? <span>{selectedLabel}</span> : null}
         <ChevronDown
           className="ui-dropdown__chevron"
-          size={14}
+          size={mode === "action" ? 12 : 14}
           strokeWidth={2}
           aria-hidden="true"
         />
@@ -234,7 +245,7 @@ export function Dropdown<T extends string>({
           className={["ui-dropdown__menu", menuClassName].filter(Boolean).join(" ")}
           id={menuId}
           ref={menuRef}
-          role="listbox"
+          role={mode === "action" ? "menu" : "listbox"}
           aria-label={ariaLabel}
           style={menuPosition}
           onKeyDown={(event) => {
@@ -260,8 +271,8 @@ export function Dropdown<T extends string>({
                 }}
                 key={option.value}
                 type="button"
-                role="option"
-                aria-selected={selected}
+                role={mode === "action" ? "menuitem" : "option"}
+                aria-selected={mode === "select" ? selected : undefined}
                 onClick={() => selectOption(option)}
                 onKeyDown={(event) => handleOptionKeyDown(event, index)}
                 onFocus={() => setActiveIndex(index)}
@@ -271,7 +282,7 @@ export function Dropdown<T extends string>({
                   {option.badge ? (
                     <span className="ui-dropdown__badge">{option.badge}</span>
                   ) : null}
-                  {selected ? (
+                  {mode === "select" && selected ? (
                     <Check size={13} strokeWidth={2} aria-hidden="true" />
                   ) : null}
                 </span>

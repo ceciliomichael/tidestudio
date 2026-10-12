@@ -63,6 +63,7 @@ export type CatalogModel = {
   supportsTools: boolean;
 };
 
+
 export function compatibleDraftModels(
   target: CatalogModel,
   models: CatalogModel[],

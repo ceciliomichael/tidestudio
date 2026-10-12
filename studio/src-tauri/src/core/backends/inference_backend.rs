@@ -1,6 +1,12 @@
 use crate::core::config::ServerConfig;
 
 pub trait ManagedInference: Send {
+    fn runtime_id(&self) -> &str {
+        "llama-cuda"
+    }
+    fn runtime_fallback(&self) -> Option<&str> {
+        None
+    }
     fn pid(&self) -> u32;
     fn stop(&mut self) -> Result<(), String>;
     fn is_running(&mut self) -> Result<bool, String>;

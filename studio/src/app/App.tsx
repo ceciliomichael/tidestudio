@@ -32,11 +32,13 @@ import {
 import {
   configureGateway,
   configureGatewayBackground,
+  clearCompletedDownloads,
   deleteModel,
   downloadHuggingFaceFile,
   downloadModelScopeFile,
   gatewayStatus,
   getModelsDirectory,
+  getCompletedDownloads,
   getUiPreference,
   huggingFaceModelFiles,
   loadModelSettings,
@@ -48,6 +50,7 @@ import {
   serverLogs,
   saveModelSettings,
   resetModelsDirectory,
+  saveCompletedDownload,
   setModelsDirectory,
   setUiPreference,
   startServer,
@@ -59,6 +62,7 @@ import {
   type ServerConfig,
   type ServerStartFailure,
   type ServerStatus,
+  type CompletedDownloadRecord,
 } from "../lib/tauri";
 
 function modelSearchCacheKey(source: ModelSearchSource) {
@@ -81,6 +85,7 @@ import { ResizableWorkspace } from "./ResizableWorkspace";
 import { SettingsSidebar, type SettingsSectionId } from "../features/settings/SettingsSidebar";
 import { GeneralSettings } from "../features/settings/GeneralSettings";
 import { ConfigurationSettings } from "../features/settings/ConfigurationSettings";
+import { RuntimeSettings } from "../features/settings/RuntimeSettings";
 import { useAppearancePreferences } from "../lib/appearance";
 import {
   type WorkspacePanelPreferences,
@@ -175,7 +180,7 @@ function createModelConfig(model: CatalogModel): ModelConfig {
 
 function runtimeCatalogModel(server: ServerStatus): CatalogModel {
   const fileName = server.modelPath.split(/[\\/]/).pop() || server.modelPath;
-  const name = server.modelName || fileName.replace(/\.gguf$/i, "");
+  const name = fileName.replace(/\.gguf$/i, "");
 
   return {
     id: `runtime-${server.port}`,
@@ -253,6 +258,8 @@ export function App({ initialPanelPreferences }: AppProps) {
   const [downloadActivities, setDownloadActivities] = useState<
     DownloadActivity[]
   >([]);
+  const downloadHistoryWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const downloadHistoryGenerationRef = useRef(0);
   const downloadAttemptsRef = useRef<Record<string, number>>({});
   const downloadSamplesRef = useRef<
     Record<
@@ -314,10 +321,52 @@ export function App({ initialPanelPreferences }: AppProps) {
       await restoreLocalModelCatalog();
       await refreshLocalModels();
     })();
+    void restoreCompletedDownloadHistory();
     void refreshModelsDirectory();
     void refreshServers();
     void restoreServerSettings();
   }, []);
+
+  function queueCompletedDownloadWrite(action: () => Promise<void>) {
+    const next = downloadHistoryWriteRef.current
+      .catch(() => undefined)
+      .then(action);
+    downloadHistoryWriteRef.current = next;
+    void next.catch((cause) => setError(String(cause)));
+  }
+
+  async function restoreCompletedDownloadHistory() {
+    const generation = downloadHistoryGenerationRef.current;
+    try {
+      const saved = await getCompletedDownloads();
+      if (downloadHistoryGenerationRef.current !== generation) return;
+      setDownloadActivities((current) => {
+        const existing = new Set(current.map((activity) => activity.downloadId));
+        const restored: DownloadActivity[] = saved
+          .filter((record) => !existing.has(record.downloadId))
+          .map((record) => ({
+            ...record,
+            status: "completed",
+            speedBytesPerSecond: 0,
+          }));
+        return [...current, ...restored];
+      });
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }
+
+  function persistCompletedDownload(record: CompletedDownloadRecord) {
+    queueCompletedDownloadWrite(() => saveCompletedDownload(record));
+  }
+
+  function handleClearCompletedDownloads() {
+    downloadHistoryGenerationRef.current += 1;
+    setDownloadActivities((current) =>
+      current.filter((activity) => activity.status !== "completed"),
+    );
+    queueCompletedDownloadWrite(clearCompletedDownloads);
+  }
 
   useEffect(() => {
     if (activePage !== "modelSearch" || modelSearchPrimedRef.current) {
@@ -502,6 +551,17 @@ export function App({ initialPanelPreferences }: AppProps) {
             )
           : [next, ...current];
       });
+
+      if (progress.status === "completed") {
+        persistCompletedDownload({
+          downloadId: progress.downloadId,
+          repoId: progress.repoId,
+          filename: progress.filename,
+          downloadedBytes: progress.downloadedBytes,
+          totalBytes: progress.totalBytes,
+          completedAt: now,
+        });
+      }
 
       if (progress.status === "completed" || progress.status === "stopped") {
         delete downloadSamplesRef.current[progress.downloadId];
@@ -860,6 +920,7 @@ export function App({ initialPanelPreferences }: AppProps) {
       supportsVision: model.supportsVision,
       supportsTools: model.supportsTools,
       ...modelConfig,
+      runtimeId: "auto",
       speculativeMode:
         model.category !== "LLM"
           ? "none"
@@ -1083,6 +1144,14 @@ export function App({ initialPanelPreferences }: AppProps) {
             : activity,
         ),
       );
+      persistCompletedDownload({
+        downloadId,
+        repoId: huggingFaceRepo.repoId,
+        filename: file.filename,
+        downloadedBytes: downloaded.sizeBytes,
+        totalBytes: downloaded.sizeBytes,
+        completedAt: Date.now(),
+      });
       delete downloadSamplesRef.current[downloadId];
       await refreshLocalModels();
       setError(null);
@@ -1205,13 +1274,15 @@ export function App({ initialPanelPreferences }: AppProps) {
                     onAppearanceChange={changeAppearance}
                     onLanguageChange={changeLanguage}
                   />
-                ) : (
+                ) : settingsSection === "configuration" ? (
                   <ConfigurationSettings
                     directory={modelsDirectory}
                     busy={modelsDirectoryBusy}
                     onDirectoryChange={applyModelsDirectory}
                     onReset={restoreDefaultModelsDirectory}
                   />
+                ) : (
+                  <RuntimeSettings />
                 )}
               </div>
             ) : activePage === "server" ? (
@@ -1242,11 +1313,7 @@ export function App({ initialPanelPreferences }: AppProps) {
               <DownloadActivityPage
                 activities={downloadActivities}
                 onStopDownload={(id) => void handleStopDownload(id)}
-                onClearCompleted={() =>
-                  setDownloadActivities((current) =>
-                    current.filter((activity) => activity.status !== "completed"),
-                  )
-                }
+                onClearCompleted={handleClearCompletedDownloads}
               />
             ) : (
               <DownloadsBrowser

@@ -541,6 +541,8 @@ mod tests {
             .expect("test client");
         let status = ServerStatus {
             backend: "llama.cpp".to_string(),
+            runtime_id: "llama-cuda".to_string(),
+            runtime_fallback: None,
             model_path: "test.gguf".to_string(),
             model_id: "test-model".to_string(),
             model_name: "Test".to_string(),

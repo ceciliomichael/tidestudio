@@ -25,6 +25,7 @@ export type ReasoningEffort =
   | "max";
 
 export type ModelConfig = {
+  runtimeId: string;
   contextSize: number | null;
   gpuLayers: number | null;
   cpuThreads: number | null;
@@ -64,6 +65,7 @@ export type ModelSettingsFile = {
   version: 1;
   load: Pick<
     ModelConfig,
+    | "runtimeId"
     | "contextSize"
     | "gpuLayers"
     | "cpuThreads"
@@ -120,6 +122,7 @@ export type ReasoningCapabilities = {
 
 export function createDefaultModelConfig(): ModelConfig {
   return {
+    runtimeId: "auto",
     contextSize: 4096,
     gpuLayers: 99,
     cpuThreads: null,
@@ -162,6 +165,7 @@ export function modelConfigToSettingsFile(
   return {
     version: 1,
     load: {
+      runtimeId: "auto",
       contextSize: config.contextSize,
       gpuLayers: config.gpuLayers,
       cpuThreads: config.cpuThreads,
@@ -217,6 +221,7 @@ export function modelConfigFromSettingsFile(
     ...fallback,
     ...settings.load,
     ...settings.inference,
+    runtimeId: "auto",
   };
 }
 

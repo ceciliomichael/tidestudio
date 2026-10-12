@@ -8,7 +8,7 @@ import {
 import type { WorkspacePanelPreferences } from "./workspacePanelPreferences";
 
 const MIN_LEFT_WIDTH = 196;
-const MAX_LEFT_WIDTH = 280;
+const MAX_LEFT_WIDTH = 380;
 const STANDARD_MIN_RIGHT_WIDTH = 260;
 const STANDARD_MAX_RIGHT_WIDTH = 440;
 const DETAIL_MIN_RIGHT_WIDTH = 480;
