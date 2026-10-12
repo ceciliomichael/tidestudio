@@ -216,6 +216,7 @@ type AppProps = {
 
 export function App({ initialPanelPreferences }: AppProps) {
   const [activePage, setActivePage] = useState<ActivePage>("server");
+  const previousAppPageRef = useRef<Exclude<ActivePage, "settings">>("server");
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const { appearance, language, changeAppearance, changeLanguage } = useAppearancePreferences();
   const [localModels, setLocalModels] = useState<CatalogModel[]>([]);
@@ -478,6 +479,13 @@ export function App({ initialPanelPreferences }: AppProps) {
         if (existing?.status === "downloading" && progress.status === "stopped") {
           // A previous attempt's Stop event arrived after a new attempt began.
           return current;
+        }
+        if (progress.status === "stopped") {
+          // Only remove a transfer that was actually being stopped. Ignore
+          // late events from older attempts and unknown download IDs.
+          return existing?.status === "stopping"
+            ? current.filter((activity) => activity.downloadId !== progress.downloadId)
+            : current;
         }
         const next: DownloadActivity = {
           ...progress,
@@ -1085,11 +1093,7 @@ export function App({ initialPanelPreferences }: AppProps) {
       delete downloadSamplesRef.current[downloadId];
       if (String(cause).includes("Model download stopped")) {
         setDownloadActivities((current) =>
-          current.map((activity) =>
-            activity.downloadId === downloadId
-              ? { ...activity, status: "stopped", speedBytesPerSecond: 0 }
-              : activity,
-          ),
+          current.filter((activity) => activity.downloadId !== downloadId),
         );
         setError(null);
       } else {
@@ -1133,6 +1137,13 @@ export function App({ initialPanelPreferences }: AppProps) {
     (activity) => activity.status === "downloading" || activity.status === "stopping",
   ).length;
 
+  function handlePageChange(page: ActivePage) {
+    if (page === "settings" && activePage !== "settings") {
+      previousAppPageRef.current = activePage;
+    }
+    setActivePage(page);
+  }
+
   function handlePanelPreferencesChange(
     preferences: WorkspacePanelPreferences,
   ) {
@@ -1165,12 +1176,12 @@ export function App({ initialPanelPreferences }: AppProps) {
             <SettingsSidebar
               selected={settingsSection}
               onSelect={setSettingsSection}
-              onBack={() => setActivePage("server")}
+              onBack={() => setActivePage(previousAppPageRef.current)}
             />
           ) : (
             <NavigationPanel
               activePage={activePage}
-              onPageChange={setActivePage}
+              onPageChange={handlePageChange}
               activeDownloadCount={activeDownloadCount}
             />
           )

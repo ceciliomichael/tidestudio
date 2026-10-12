@@ -4,6 +4,18 @@ All notable changes to TideStudio will be documented here.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-12
+
+### Changed
+
+- Redesigned active download cards with clearer model and file information, an icon-only Stop button, and separate progress, speed, and downloaded-size details.
+- Cancelled downloads now disappear from the Downloads page after cancellation completes, instead of remaining in a Stopped section. Completed downloads remain available until cleared.
+
+### Fixed
+
+- Settings > Back to app now returns to the page you were viewing before opening Settings rather than always going to Server.
+- Stopping a download keeps its pending state visible until cancellation is confirmed, without retaining the cancelled transfer in download history.
+
 ## [0.1.2] - 2026-10-12
 
 ### Added

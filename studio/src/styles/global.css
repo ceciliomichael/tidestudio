@@ -240,15 +240,16 @@ h2 {
 .download-activity-card__top {
   min-width: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
 .download-activity-card__identity {
   min-width: 0;
+  flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
 }
@@ -278,13 +279,27 @@ h2 {
 }
 
 .download-activity-card__icon {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
   border-radius: 8px;
   color: var(--color-brand);
   background: var(--color-brand-soft);
+}
+
+.download-activity-card__progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.download-activity-card__status {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 550;
 }
 
 .download-activity-card__percent {
@@ -300,25 +315,21 @@ h2 {
   text-align: center;
 }
 
-.download-activity-card__actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
 .download-activity-card__stop {
-  min-height: 27px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border: 1px solid var(--color-border);
-  border-radius: 7px;
-  padding: 4px 8px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 8px;
+  padding: 0;
   color: var(--color-foreground);
   background: var(--color-surface-muted);
-  font-size: 12px;
+}
+
+.download-activity-card__stop svg {
+  display: block;
 }
 
 .download-activity-card__stop:hover:not(:disabled) {
@@ -331,9 +342,9 @@ h2 {
 }
 
 .download-activity-card__track {
-  height: 5px;
+  height: 6px;
   overflow: hidden;
-  margin-top: 10px;
+  margin-top: 8px;
   border-radius: 999px;
   background: var(--color-border);
 }
@@ -349,7 +360,7 @@ h2 {
   display: grid;
   grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.3fr);
   gap: 12px;
-  margin-top: 9px;
+  margin-top: 12px;
 }
 
 .download-activity-card__metrics > div {
@@ -5616,7 +5627,7 @@ body {
 .server-page-header__status code {
   overflow: hidden;
   color: var(--color-muted-foreground);
-  font: 10.5px "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

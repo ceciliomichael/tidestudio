@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, X } from "lucide-react";
+import { CheckCircle2, Download, Square } from "lucide-react";
 import { useMemo } from "react";
 import type { DownloadActivity } from "./types";
 
@@ -29,13 +29,19 @@ function displayName(repoId: string): string {
   return repoId.split("/").pop() || repoId;
 }
 
+function displaySpeed(activity: DownloadActivity): string {
+  if (activity.status === "stopping") {
+    return "0 B/s";
+  }
+  if (activity.speedBytesPerSecond > 0) {
+    return `${formatBytes(activity.speedBytesPerSecond)}/s`;
+  }
+  return "Starting";
+}
+
 export function DownloadActivityPage({ activities, onClearCompleted, onStopDownload }: Props) {
   const active = useMemo(
     () => activities.filter((activity) => activity.status === "downloading" || activity.status === "stopping"),
-    [activities],
-  );
-  const stopped = useMemo(
-    () => activities.filter((activity) => activity.status === "stopped"),
     [activities],
   );
   const completed = useMemo(
@@ -77,21 +83,26 @@ export function DownloadActivityPage({ activities, onClearCompleted, onStopDownl
                             <span title={activity.filename}>{activity.filename}</span>
                           </div>
                         </div>
-                        <div className="download-activity-card__actions">
-                          <span className="download-activity-card__percent">
-                            {activity.status === "stopping" ? "Stopping..." : percent === null ? "..." : `${percent}%`}
-                          </span>
-                          <button
-                            type="button"
-                            className="download-activity-card__stop"
-                            disabled={activity.status === "stopping"}
-                            onClick={() => onStopDownload(activity.downloadId)}
-                            aria-label={`Stop downloading ${activity.filename}`}
-                          >
-                            <X size={13} strokeWidth={2} aria-hidden="true" />
-                            Stop
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          className="download-activity-card__stop"
+                          disabled={activity.status === "stopping"}
+                          onClick={() => onStopDownload(activity.downloadId)}
+                          aria-label={activity.status === "stopping"
+                            ? `Stopping download of ${activity.filename}`
+                            : `Stop downloading ${activity.filename}`}
+                          title={activity.status === "stopping" ? "Stopping download" : "Stop download"}
+                        >
+                          <Square size={13} fill="currentColor" strokeWidth={1.8} aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="download-activity-card__progress">
+                        <span className="download-activity-card__status">
+                          {activity.status === "stopping" ? "Stopping..." : "Downloading"}
+                        </span>
+                        <span className="download-activity-card__percent">
+                          {percent === null ? "..." : `${percent}%`}
+                        </span>
                       </div>
                       <div
                         className="download-activity-card__track"
@@ -109,7 +120,7 @@ export function DownloadActivityPage({ activities, onClearCompleted, onStopDownl
                       <div className="download-activity-card__metrics">
                         <div>
                           <span>Speed</span>
-                          <strong>{activity.speedBytesPerSecond > 0 ? `${formatBytes(activity.speedBytesPerSecond)}/s` : "Starting"}</strong>
+                          <strong>{displaySpeed(activity)}</strong>
                         </div>
                         <div>
                           <span>Downloaded</span>
@@ -127,27 +138,6 @@ export function DownloadActivityPage({ activities, onClearCompleted, onStopDownl
               <div className="download-activity-page__empty">No active downloads.</div>
             )}
           </section>
-
-          {stopped.length > 0 ? (
-            <section className="download-activity-page__section" aria-label="Stopped downloads">
-              <div className="download-activity-page__section-heading">
-                <h2>Stopped</h2>
-                <span>{stopped.length}</span>
-              </div>
-              <div className="download-activity-completed">
-                {stopped.map((activity) => (
-                  <div className="download-activity-completed__row" key={activity.downloadId}>
-                    <X size={18} strokeWidth={1.9} aria-hidden="true" />
-                    <div>
-                      <strong title={activity.repoId}>{displayName(activity.repoId)}</strong>
-                      <span title={activity.filename}>{activity.filename}</span>
-                    </div>
-                    <span>Stopped</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
 
           <section className="download-activity-page__section" aria-label="Completed downloads">
             <div className="download-activity-page__section-heading">
