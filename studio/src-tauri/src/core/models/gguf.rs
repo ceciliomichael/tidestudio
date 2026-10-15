@@ -1,3 +1,4 @@
+use super::memory_profile::{CacheLayer, ModelMemoryProfile, scan_tensors};
 use serde::Serialize;
 use std::{
     fs::File,
@@ -32,6 +33,7 @@ pub struct ModelCapabilities {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GgufInspection {
+    pub memory_profile: Option<ModelMemoryProfile>,
     pub architecture: Option<String>,
     pub model_name: Option<String>,
     pub parameter_size: Option<String>,
@@ -91,6 +93,15 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
     let mut chat_template = None;
     let mut capability_metadata = Vec::new();
     let mut tokenizer_metadata = Vec::new();
+    let mut tensor_alignment = 32_u64;
+    let mut per_layer_kv_heads = None;
+    let mut nextn_layers = 0_u64;
+    let mut attention_interval = None;
+    let mut ssm_inner = None;
+    let mut ssm_state = None;
+    let mut ssm_groups = None;
+    let mut ssm_conv = None;
+    let mut shortconv_cache = None;
 
     for _ in 0..metadata_count {
         let key = read_string(&mut file)?;
@@ -98,6 +109,7 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         let lower_key = key.to_lowercase();
         let tokenizer_metadata_key = lower_key.starts_with("tokenizer.ggml.");
         let capture_value = lower_key == "general.architecture"
+            || lower_key == "general.alignment"
             || lower_key == "general.name"
             || lower_key == "general.size_label"
             || lower_key == "general.parameter_count"
@@ -109,12 +121,22 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
             || lower_key.ends_with(".attention.head_count_kv")
             || lower_key.ends_with(".attention.key_length")
             || lower_key.ends_with(".attention.value_length")
+            || lower_key.ends_with(".nextn_predict_layers")
+            || lower_key.ends_with(".full_attention_interval")
+            || lower_key.ends_with(".ssm.inner_size")
+            || lower_key.ends_with(".ssm.state_size")
+            || lower_key.ends_with(".ssm.group_count")
+            || lower_key.ends_with(".ssm.conv_kernel")
+            || lower_key.ends_with(".shortconv.l_cache")
             || lower_key.ends_with(".expert_count")
             || lower_key == "laya.max_len"
             || lower_key.contains("chat_template")
             || capability_key(&lower_key);
 
-        let value = if tokenizer_metadata_key {
+        let value = if lower_key.ends_with(".attention.head_count_kv") && value_type == 9 {
+            per_layer_kv_heads = read_small_integer_array(&mut file)?;
+            None
+        } else if tokenizer_metadata_key {
             let value_hash = fingerprint_value(&mut file, value_type)?;
             tokenizer_metadata.push((lower_key.clone(), value_hash));
             None
@@ -126,6 +148,12 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         };
 
         match lower_key.as_str() {
+            "general.alignment" => {
+                tensor_alignment = value
+                    .as_deref()
+                    .and_then(|text| text.parse().ok())
+                    .unwrap_or(0);
+            }
             "general.architecture" => architecture = value.clone(),
             "general.name" => model_name = value.clone(),
             "general.size_label" => parameter_size = value.clone(),
@@ -173,6 +201,27 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
                         value.as_deref().and_then(|value| value.parse::<u64>().ok());
                 }
             }
+            _ if lower_key.ends_with(".nextn_predict_layers") => {
+                nextn_layers = value.as_deref().and_then(|v| v.parse().ok()).unwrap_or(0);
+            }
+            _ if lower_key.ends_with(".full_attention_interval") => {
+                attention_interval = value.as_deref().and_then(|v| v.parse::<u64>().ok());
+            }
+            _ if lower_key.ends_with(".ssm.inner_size") => {
+                ssm_inner = value.as_deref().and_then(|v| v.parse::<u64>().ok());
+            }
+            _ if lower_key.ends_with(".ssm.state_size") => {
+                ssm_state = value.as_deref().and_then(|v| v.parse::<u64>().ok());
+            }
+            _ if lower_key.ends_with(".ssm.group_count") => {
+                ssm_groups = value.as_deref().and_then(|v| v.parse::<u64>().ok());
+            }
+            _ if lower_key.ends_with(".ssm.conv_kernel") => {
+                ssm_conv = value.as_deref().and_then(|v| v.parse::<u64>().ok());
+            }
+            _ if lower_key.ends_with(".shortconv.l_cache") => {
+                shortconv_cache = value.as_deref().and_then(|v| v.parse::<u64>().ok());
+            }
             _ if lower_key.ends_with(".expert_count") => {
                 if expert_count.is_none() {
                     expert_count = value.as_deref().and_then(|value| value.parse::<u64>().ok());
@@ -201,16 +250,13 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         && !parameter_size
             .as_deref()
             .is_some_and(|label| label.to_ascii_lowercase().contains('x'));
-    let needs_tensor_counts = parameter_size.is_none() || should_derive_moe;
-    let tensor_counts = needs_tensor_counts
-        .then(|| read_tensor_parameter_count(&mut file, tensor_count))
-        .transpose()?;
+    let tensor_counts = scan_tensors(&mut file, tensor_count, gpu_layer_count, tensor_alignment)?;
 
     if should_derive_moe
-        && let (Some(experts), Some(counts)) = (expert_count, tensor_counts.as_ref())
-        && counts.expert > 0
+        && let Some(experts) = expert_count
+        && tensor_counts.expert_parameters > 0
     {
-        let per_expert = counts.expert / u128::from(experts);
+        let per_expert = tensor_counts.expert_parameters / u128::from(experts);
         if per_expert > 0 {
             parameter_size = Some(format!("{experts}x{}", format_parameter_count(per_expert)));
         }
@@ -218,7 +264,7 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
 
     if parameter_size.is_none() {
         let count = parameter_count
-            .or_else(|| tensor_counts.as_ref().map(|counts| counts.total))
+            .or(Some(tensor_counts.total_parameters))
             .unwrap_or(0);
         if count > 0 {
             parameter_size = Some(format_parameter_count(count));
@@ -233,8 +279,83 @@ pub fn inspect_gguf(path: &Path, hints: CapabilityHints<'_>) -> Result<GgufInspe
         hints,
     );
     let tokenizer_fingerprint = build_tokenizer_fingerprint(tokenizer_metadata);
+    let mut memory_profile = tensor_counts.memory;
+    if let (Some(profile), Some(architecture), Some(blocks)) = (
+        &mut memory_profile,
+        architecture.as_deref(),
+        gpu_layer_count,
+    ) {
+        if architecture == "qwen35" {
+            profile.active_layer_count =
+                usize::try_from(blocks.saturating_sub(nextn_layers)).unwrap_or(0);
+            if let (Some(interval), Some(inner), Some(state), Some(groups), Some(conv), Some(heads)) = (
+                attention_interval,
+                ssm_inner,
+                ssm_state,
+                ssm_groups,
+                ssm_conv,
+                attention_head_count_kv,
+            ) && interval > 0
+                && conv > 0
+                && profile.active_layer_count > 0
+            {
+                let recurrent_bytes = inner
+                    .checked_mul(state)
+                    .and_then(|s| {
+                        groups
+                            .checked_mul(state)
+                            .and_then(|groups_state| groups_state.checked_mul(2))
+                            .and_then(|groups_state| inner.checked_add(groups_state))
+                            .and_then(|width| width.checked_mul(conv - 1))
+                            .and_then(|history| s.checked_add(history))
+                    })
+                    .and_then(|elements| elements.checked_mul(4));
+                if let Some(recurrent_bytes) = recurrent_bytes {
+                    profile.cache_layers = Some(
+                        (0..profile.active_layer_count)
+                            .map(|index| {
+                                if (index + 1) % interval as usize == 0 {
+                                    CacheLayer {
+                                        kv_heads: heads,
+                                        recurrent_bytes: 0,
+                                    }
+                                } else {
+                                    CacheLayer {
+                                        kv_heads: 0,
+                                        recurrent_bytes,
+                                    }
+                                }
+                            })
+                            .collect(),
+                    );
+                }
+            }
+        } else if matches!(architecture, "lfm2" | "lfm2moe") {
+            if let (Some(heads), Some(cache), Some(embedding)) =
+                (per_layer_kv_heads, shortconv_cache, embedding_length)
+                && heads.len() == profile.layer_bytes.len()
+                && cache > 0
+            {
+                if let Some(recurrent_bytes) = embedding
+                    .checked_mul(cache - 1)
+                    .and_then(|size| size.checked_mul(4))
+                {
+                    profile.cache_layers = Some(
+                        heads
+                            .into_iter()
+                            .map(|kv_heads| CacheLayer {
+                                kv_heads,
+                                recurrent_bytes: if kv_heads == 0 { recurrent_bytes } else { 0 },
+                            })
+                            .collect(),
+                    );
+                }
+            }
+        }
+    }
 
     Ok(GgufInspection {
+        memory_profile,
         architecture,
         model_name,
         parameter_size,
@@ -340,49 +461,6 @@ fn normalize_pooling_type(value: &str) -> Option<String> {
         "4" | "rank" => Some("rank".to_string()),
         _ => None,
     }
-}
-
-struct TensorParameterCounts {
-    total: u128,
-    expert: u128,
-}
-
-fn read_tensor_parameter_count(
-    file: &mut File,
-    tensor_count: u64,
-) -> Result<TensorParameterCounts, String> {
-    let mut total = 0_u128;
-    let mut expert = 0_u128;
-
-    for _ in 0..tensor_count {
-        let name = read_string(file)?;
-        let dimensions = read_u32(file)?;
-        let mut elements = 1_u128;
-
-        for _ in 0..dimensions {
-            elements = elements
-                .checked_mul(u128::from(read_u64(file)?))
-                .ok_or_else(|| "GGUF tensor parameter count overflow".to_string())?;
-        }
-
-        let _tensor_type = read_u32(file)?;
-        let _offset = read_u64(file)?;
-        total = total
-            .checked_add(elements)
-            .ok_or_else(|| "GGUF parameter count overflow".to_string())?;
-
-        let lower_name = name.to_ascii_lowercase();
-        if lower_name.contains("exps")
-            || lower_name.contains(".experts.")
-            || lower_name.contains("expert")
-        {
-            expert = expert
-                .checked_add(elements)
-                .ok_or_else(|| "GGUF expert parameter count overflow".to_string())?;
-        }
-    }
-
-    Ok(TensorParameterCounts { total, expert })
 }
 
 fn format_parameter_count(count: u128) -> String {
@@ -775,6 +853,29 @@ fn read_value_text(file: &mut File, value_type: u32) -> Result<Option<String>, S
     }
 }
 
+fn read_small_integer_array(file: &mut File) -> Result<Option<Vec<u64>>, String> {
+    let kind = read_u32(file)?;
+    let count = read_u64(file)?;
+    if count > 65_536 || !matches!(kind, 4 | 5) {
+        skip_array_elements(file, kind, count)?;
+        return Ok(None);
+    }
+    let mut values = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let number = if kind == 4 {
+            u64::from(read_u32(file)?)
+        } else {
+            let signed = read_i32(file)?;
+            if signed < 0 {
+                return Err("negative GGUF attention head count".to_string());
+            }
+            signed as u64
+        };
+        values.push(number);
+    }
+    Ok(Some(values))
+}
+
 fn read_array_text(file: &mut File) -> Result<Option<String>, String> {
     let element_type = read_u32(file)?;
     let count = read_u64(file)?;
@@ -855,7 +956,7 @@ fn seek_forward(file: &mut File, bytes: u64) -> Result<(), String> {
         .map_err(|error| format!("failed to seek GGUF metadata: {error}"))
 }
 
-fn read_string(file: &mut File) -> Result<String, String> {
+pub(super) fn read_string(file: &mut File) -> Result<String, String> {
     let length = read_u64(file)?;
     if length > MAX_STRING_BYTES {
         return Err(format!(
@@ -895,7 +996,7 @@ fn read_i16(file: &mut File) -> Result<i16, String> {
     Ok(i16::from_le_bytes(bytes))
 }
 
-fn read_u32(file: &mut File) -> Result<u32, String> {
+pub(super) fn read_u32(file: &mut File) -> Result<u32, String> {
     let mut bytes = [0_u8; 4];
     file.read_exact(&mut bytes)
         .map_err(|error| format!("failed to read GGUF metadata: {error}"))?;
@@ -916,7 +1017,7 @@ fn read_f32(file: &mut File) -> Result<f32, String> {
     Ok(f32::from_le_bytes(bytes))
 }
 
-fn read_u64(file: &mut File) -> Result<u64, String> {
+pub(super) fn read_u64(file: &mut File) -> Result<u64, String> {
     let mut bytes = [0_u8; 8];
     file.read_exact(&mut bytes)
         .map_err(|error| format!("failed to read GGUF metadata: {error}"))?;
@@ -1341,6 +1442,64 @@ mod tests {
         assert_eq!(inspection.context_length, Some(131_072));
 
         fs::remove_file(path).expect("remove test gguf");
+    }
+
+    #[test]
+    fn installed_hybrid_memory_fixtures_when_configured() {
+        let Some(directory) = std::env::var_os("TIDESTUDIO_MEMORY_FIXTURES") else {
+            return;
+        };
+        let root = Path::new(&directory);
+        for (relative, architecture, active_layers, attention_layers) in [
+            (
+                "unsloth/Qwen3.5-4B-MTP-GGUF/Qwen3.5-4B-Q8_0.gguf",
+                "qwen35",
+                32,
+                8,
+            ),
+            (
+                "unsloth/Qwen3.5-0.8B-MTP-GGUF/Qwen3.5-0.8B-BF16.gguf",
+                "qwen35",
+                24,
+                6,
+            ),
+            ("LiquidAI/d1-3B-GGUF/d1-3B-BF16.gguf", "lfm2", 30, 8),
+            (
+                "LiquidAI/LFM2.5-24B-A2B-GGUF/LFM2.5-24B-A2B-Q4_K_M.gguf",
+                "lfm2moe",
+                40,
+                0,
+            ),
+        ] {
+            let path = root.join(relative);
+            let inspection = inspect_gguf(
+                &path,
+                CapabilityHints {
+                    repo_id: "local/fixture",
+                    filename: relative,
+                    tags: &[],
+                    pipeline_tag: None,
+                },
+            )
+            .unwrap_or_else(|error| panic!("failed to inspect {}: {error}", path.display()));
+            assert_eq!(inspection.architecture.as_deref(), Some(architecture));
+            let profile = inspection
+                .memory_profile
+                .expect("expected valid tensor footprint");
+            assert_eq!(profile.active_layer_count, active_layers);
+            assert!(profile.token_embedding_bytes > 0);
+            let layers = profile
+                .cache_layers
+                .expect("expected hybrid per-layer cache metadata");
+            assert_eq!(layers.len(), active_layers);
+            let attention_count = layers.iter().filter(|layer| layer.kv_heads > 0).count();
+            if attention_layers > 0 {
+                assert_eq!(attention_count, attention_layers);
+            } else {
+                assert!(attention_count > 0);
+            }
+            assert!(layers.iter().any(|layer| layer.recurrent_bytes > 0));
+        }
     }
 
     fn write_string_metadata(file: &mut File, key: &str, value: &str) {

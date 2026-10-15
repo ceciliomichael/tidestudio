@@ -128,6 +128,7 @@ function formatContextLength(contextLength: number | null) {
 
 function modelInfoToCatalog(model: ModelInfo): CatalogModel {
   return {
+    memoryProfile: model.memoryProfile ?? null,
     id: model.path,
     name: model.name,
     path: model.path,
@@ -183,6 +184,7 @@ function runtimeCatalogModel(server: ServerStatus): CatalogModel {
   const name = fileName.replace(/\.gguf$/i, "");
 
   return {
+    memoryProfile: null,
     id: `runtime-${server.port}`,
     name,
     path: server.modelPath,
@@ -272,6 +274,7 @@ export function App({ initialPanelPreferences }: AppProps) {
     >
   >({});
   const modelSettingsSaveRef = useRef<Record<string, Promise<void>>>({});
+  const modelCatalogRefreshIdRef = useRef(0);
   const modelSearchPrimedRef = useRef(false);
   const [lastDownloadedModel, setLastDownloadedModel] =
     useState<DownloadedModel | null>(null);
@@ -375,6 +378,12 @@ export function App({ initialPanelPreferences }: AppProps) {
 
     modelSearchPrimedRef.current = true;
     void primeModelSearch();
+  }, [activePage]);
+
+  useEffect(() => {
+    if (activePage === "models") {
+      void refreshLocalModels();
+    }
   }, [activePage]);
 
   async function searchModels(
@@ -561,6 +570,7 @@ export function App({ initialPanelPreferences }: AppProps) {
           totalBytes: progress.totalBytes,
           completedAt: now,
         });
+        void refreshLocalModels();
       }
 
       if (progress.status === "completed" || progress.status === "stopped") {
@@ -669,6 +679,7 @@ export function App({ initialPanelPreferences }: AppProps) {
   }
 
   async function refreshLocalModels() {
+    const refreshId = ++modelCatalogRefreshIdRef.current;
     try {
       const modelInfos = await listModels();
       const discovered = modelInfos.map(modelInfoToCatalog);
@@ -689,6 +700,10 @@ export function App({ initialPanelPreferences }: AppProps) {
 
         }),
       );
+
+      if (refreshId !== modelCatalogRefreshIdRef.current) {
+        return;
+      }
 
       const resolvedConfigs = Object.fromEntries(persistedConfigs);
 

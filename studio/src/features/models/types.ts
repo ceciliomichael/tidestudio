@@ -1,3 +1,5 @@
+import type { ModelMemoryProfile } from "../../lib/tauri";
+
 export type ModelCategory = "LLM" | "Embedding" | "Drafter" | "DECISION";
 
 export function modelFileName(path: string): string {
@@ -32,6 +34,7 @@ export function modelIsInFolder(path: string, folder: string): boolean {
 }
 
 export type CatalogModel = {
+  memoryProfile: ModelMemoryProfile | null;
   id: string;
   name: string;
   path: string;

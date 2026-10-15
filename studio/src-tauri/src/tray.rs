@@ -3,6 +3,8 @@ use std::{sync::atomic::Ordering, thread, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 #[cfg(windows)]
+use std::sync::Mutex;
+#[cfg(windows)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 #[cfg(windows)]
 use tauri::{PhysicalPosition, Position, WebviewUrl, WebviewWindowBuilder};
@@ -26,6 +28,37 @@ const POPUP_HEIGHT: f64 = 69.0;
 const POPUP_OVERLAP: i32 = 10;
 
 #[cfg(windows)]
+#[derive(Default, PartialEq)]
+enum TrayDismissal {
+    #[default]
+    None,
+    Blur,
+    MouseDown,
+}
+
+#[cfg(windows)]
+impl TrayDismissal {
+    fn right_down(&mut self, visible: bool) -> bool {
+        if visible {
+            *self = Self::MouseDown;
+            return true;
+        }
+
+        // Blur may close before the tray delivers this same mouse-down. A second
+        // down after MouseDown is a new gesture, not an old callback to suppress.
+        *self = match self {
+            Self::Blur => Self::MouseDown,
+            _ => Self::None,
+        };
+        false
+    }
+
+    fn consume_right_up(&mut self) -> bool {
+        std::mem::take(self) != Self::None
+    }
+}
+
+#[cfg(windows)]
 fn tray_click_area(
     tray: (i32, i32, i32, i32),
     click: PhysicalPosition<f64>,
@@ -34,6 +67,14 @@ fn tray_click_area(
     const CLICK_SLOP: i32 = 10;
     let click_x = click.x.round() as i32;
     let click_y = click.y.round() as i32;
+    if tray.2 <= tray.0 || tray.3 <= tray.1 {
+        return (
+            click_x.saturating_sub(CLICK_SLOP),
+            click_y.saturating_sub(CLICK_SLOP),
+            click_x.saturating_add(CLICK_SLOP),
+            click_y.saturating_add(CLICK_SLOP),
+        );
+    }
     (
         tray.0.min(click_x.saturating_sub(CLICK_SLOP)),
         tray.1.min(click_y.saturating_sub(CLICK_SLOP)),
@@ -120,13 +161,21 @@ pub fn handle_window_event(app: &AppHandle, label: &str, event: &WindowEvent) {
             }
         }
         (TRAY_WINDOW, WindowEvent::Focused(false)) => {
-            // Windows shifts focus away from the popup on the next tray click.
-            // Let the tray icon's mouse-up handler toggle it, rather than
-            // hiding it early and reopening it on the same click.
-            #[cfg(windows)]
-            if cursor_over_tray_icon(app) {
+            if !app
+                .state::<AppState>()
+                .tray_popup_visible
+                .load(Ordering::Acquire)
+            {
                 return;
             }
+            #[cfg(windows)]
+            if cursor_over_tray_icon(app) {
+                if let Ok(mut dismissal) = app.state::<Mutex<TrayDismissal>>().lock() {
+                    *dismissal = TrayDismissal::Blur;
+                }
+            }
+            // Do not leave the visible menu behind the overflow panel until the
+            // tray's mouse-up event. That callback will consume this dismissal.
             hide_tray_popup(app);
         }
         _ => {}
@@ -284,6 +333,7 @@ fn start_outside_click_monitor(app: AppHandle, hwnd: usize) {
 
 #[cfg(windows)]
 pub fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    app.manage(Mutex::new(TrayDismissal::default()));
     let popup = WebviewWindowBuilder::new(app, TRAY_WINDOW, WebviewUrl::App("tray.html".into()))
         .title("TideStudio Tray")
         .inner_size(POPUP_WIDTH, POPUP_HEIGHT)
@@ -319,12 +369,44 @@ pub fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                if button_state != MouseButtonState::Up {
+                let app = tray.app_handle();
+                if button_state == MouseButtonState::Down {
+                    match button {
+                        MouseButton::Right => {
+                            let visible = app
+                                .state::<AppState>()
+                                .tray_popup_visible
+                                .load(Ordering::Acquire);
+                            let should_close = app
+                                .state::<Mutex<TrayDismissal>>()
+                                .lock()
+                                .map(|mut dismissal| dismissal.right_down(visible))
+                                .unwrap_or(visible);
+                            if should_close {
+                                hide_tray_popup(app);
+                            }
+                        }
+                        _ => {
+                            if let Ok(mut dismissal) = app.state::<Mutex<TrayDismissal>>().lock() {
+                                *dismissal = TrayDismissal::None;
+                            }
+                            hide_tray_popup(app);
+                        }
+                    }
                     return;
                 }
                 match button {
-                    MouseButton::Left => show_main(tray.app_handle()),
-                    MouseButton::Right => toggle_tray_popup(tray.app_handle(), position, rect),
+                    MouseButton::Left => show_main(app),
+                    MouseButton::Right => {
+                        let dismissed = app
+                            .state::<Mutex<TrayDismissal>>()
+                            .lock()
+                            .map(|mut dismissal| dismissal.consume_right_up())
+                            .unwrap_or(false);
+                        if !dismissed {
+                            toggle_tray_popup(app, position, rect);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -340,7 +422,7 @@ pub fn setup_tray(_app: &mut tauri::App) -> tauri::Result<()> {
 
 #[cfg(all(test, windows))]
 mod tests {
-    use super::{contains_point, tray_click_area};
+    use super::{TrayDismissal, contains_point, tray_click_area};
     use tauri::PhysicalPosition;
 
     #[test]
@@ -349,7 +431,40 @@ mod tests {
         let bounds = tray_click_area((0, 0, 0, 0), PhysicalPosition::new(120.0, 300.0));
         assert!(contains_point(bounds, 120, 300));
         assert!(contains_point(bounds, 125, 305));
+        assert!(!contains_point(bounds, 50, 200));
         assert!(!contains_point(bounds, 135, 310));
         assert!(!contains_point(bounds, 250, 300));
+    }
+
+    #[test]
+    fn tray_down_closes_and_only_its_mouse_up_is_consumed() {
+        let mut dismissal = TrayDismissal::default();
+        assert!(dismissal.right_down(true));
+        assert!(dismissal.consume_right_up());
+        assert!(!dismissal.right_down(false));
+        assert!(!dismissal.consume_right_up());
+    }
+
+    #[test]
+    fn blur_before_mouse_down_still_consumes_the_same_mouse_up() {
+        let mut dismissal = TrayDismissal::Blur;
+        assert!(!dismissal.right_down(false));
+        assert!(dismissal.consume_right_up());
+        assert!(!dismissal.consume_right_up());
+    }
+
+    #[test]
+    fn blur_without_a_mouse_down_callback_still_consumes_mouse_up() {
+        let mut dismissal = TrayDismissal::Blur;
+        assert!(dismissal.consume_right_up());
+        assert!(!dismissal.consume_right_up());
+    }
+
+    #[test]
+    fn a_new_press_after_a_cancelled_closing_gesture_can_open_again() {
+        let mut dismissal = TrayDismissal::default();
+        assert!(dismissal.right_down(true));
+        assert!(!dismissal.right_down(false));
+        assert!(!dismissal.consume_right_up());
     }
 }

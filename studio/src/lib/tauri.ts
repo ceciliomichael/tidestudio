@@ -10,7 +10,19 @@ import type {
   ModelSettingsFile,
 } from "./config";
 
+export type ModelMemoryProfile = {
+  layerBytes: number[];
+  sharedBytes: number;
+  outputBytes: number;
+  storedBytes: number;
+  hasOutputTensor: boolean;
+  tokenEmbeddingBytes?: number;
+  activeLayerCount?: number;
+  cacheLayers?: { kvHeads: number; recurrentBytes: number }[] | null;
+};
+
 export type ModelInfo = {
+  memoryProfile: ModelMemoryProfile | null;
   name: string;
   path: string;
   sizeBytes: number;

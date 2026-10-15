@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getUiPreference, setUiPreference } from "./tauri";
 
 export type AppAppearance = "light" | "dark" | "system";
 export type AppLanguage = "en-US" | "en-GB" | "fil-PH";
 
-const APPEARANCE_KEY = "app.appearance.v1";
+export const APPEARANCE_KEY = "app.appearance.v1";
 const LANGUAGE_KEY = "app.language.v1";
 
 function isAppearance(value: string | null): value is AppAppearance {
@@ -44,12 +45,14 @@ export function useAppearancePreferences() {
     function applyTheme() {
       const dark = appearance === "dark" || (appearance === "system" && media.matches);
       document.documentElement.dataset.theme = dark ? "dark" : "light";
+      const color = getComputedStyle(document.documentElement)
+        .getPropertyValue("--color-sidebar")
+        .trim();
+      document.querySelector('meta[name="theme-color"]')?.setAttribute("content", color);
 
       if (isTauri()) {
         const nativeWindow = getCurrentWindow();
-        const color = getComputedStyle(document.documentElement)
-          .getPropertyValue("--color-sidebar")
-          .trim();
+        void emit("tidestudio:appearance", { appearance, dark }).catch(console.error);
         void (async () => {
           await nativeWindow.setTheme(
             appearance === "system" ? null : dark ? "dark" : "light",

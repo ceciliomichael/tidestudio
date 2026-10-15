@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run prepare:llama && npm run build:api-gateway && npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run prepare:llama && npm run build && npm run stage:release-runtime",
+    "beforeBuildCommand": "npm run prepare:llama -- --latest && npm run build && npm run stage:release-runtime",
     "frontendDist": "../dist"
   },
   "app": {

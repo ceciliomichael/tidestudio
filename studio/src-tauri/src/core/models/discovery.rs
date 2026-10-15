@@ -123,6 +123,9 @@ fn scan_directory(
             .and_then(|duration| u64::try_from(duration.as_millis()).ok());
 
         models.push(ModelInfo {
+            memory_profile: inspection
+                .as_ref()
+                .and_then(|value| value.memory_profile.clone()),
             name,
             path: path.to_string_lossy().into_owned(),
             size_bytes: metadata.len(),

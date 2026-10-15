@@ -16,6 +16,16 @@ export type DropdownOption<T extends string> = {
   badge?: string;
 };
 
+export function getDropdownNaturalHeight(
+  scrollHeight: number,
+  offsetHeight: number,
+  clientHeight: number,
+): number {
+  // scrollHeight omits borders; max-height uses the border-box.
+  // A pixel of allowance avoids a rounding-only scrollbar in short menus.
+  return scrollHeight + (offsetHeight - clientHeight) + 1;
+}
+
 type Props<T extends string> = {
   value: T;
   options: DropdownOption<T>[];
@@ -105,7 +115,12 @@ export function Dropdown<T extends string>({
         gap,
         Math.min(rect.right - width, window.innerWidth - width - gap),
       );
-      const height = Math.min(menu.scrollHeight, maxMenuHeight);
+      const intrinsicHeight = getDropdownNaturalHeight(
+        menu.scrollHeight,
+        menu.offsetHeight,
+        menu.clientHeight,
+      );
+      const height = Math.min(intrinsicHeight, maxMenuHeight);
       const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - 2 * gap);
       const spaceAbove = Math.max(0, rect.top - 2 * gap);
       const openAbove = height > spaceBelow && spaceAbove > spaceBelow;

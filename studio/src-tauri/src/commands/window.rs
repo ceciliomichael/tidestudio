@@ -41,7 +41,7 @@ fn apply_windows_caption_color(
     }
     let parsed = u32::from_str_radix(rgb, 16).map_err(|_| "invalid caption color")?;
     let caption_color = ((parsed & 0xff) << 16) | (parsed & 0xff00) | (parsed >> 16);
-    let text_color: u32 = if dark { 0x00e7e7e7 } else { 0x00191919 };
+    let text_color: u32 = if dark { 0x00eae9e9 } else { 0x00212220 };
     let hwnd = window.hwnd().map_err(|error| error.to_string())?.0 as *mut c_void;
 
     // Windows 11 supports DWMWA_BORDER_COLOR (34), CAPTION_COLOR (35), and TEXT_COLOR (36).

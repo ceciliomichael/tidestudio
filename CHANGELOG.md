@@ -4,6 +4,19 @@ All notable changes to TideStudio will be documented here.
 
 ## [Unreleased]
 
+### Improved
+
+- Context Length now adjusts in one-token increments instead of snapping to predefined sizes; the GPU / Total estimate uses the selected value.
+- The compact memory card uses shorter N/A badges for estimates that cannot be calculated reliably.
+- Improved pre-load memory calculations using GGUF tensor placement and context-sensitive KV cache estimates while retaining the original compact GPU / Total memory card.
+- Incomplete or unsupported metadata shows N/A instead of a fabricated memory estimate.
+- Estimated memory now accounts for Qwen3.5 hybrid attention/recurrent state, LFM2/LFM2.5 per-layer attention and convolution caches, tied output embeddings, and unused MTP companion blocks when calculating GPU and Total.
+
+### Fixed
+
+- Make the Load Model settings back arrow use the same button hover background and border styling as the dialog's X control.
+- Refresh the Models catalog immediately when a model download completes and when opening the Models page, without allowing older discovery results to overwrite newer ones.
+
 ## [0.1.4] - 2026-10-13
 
 ### Added

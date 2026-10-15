@@ -164,6 +164,15 @@ npm ci
 npm run release:windows
 ```
 
+The Windows release build checks the published llama.cpp GitHub releases and
+automatically downloads the newest release with both Windows x64 CUDA 13.4
+archives. If that exact runtime is already installed locally, it is reused.
+The new runtime is validated before replacing the existing one. A failed
+download or invalid runtime stops packaging rather than bundling stale files.
+This requires a working internet connection when checking for releases.
+
+Development startup continues to use the pinned llama.cpp runtime.
+
 The NSIS installer is generated under:
 
 ```text

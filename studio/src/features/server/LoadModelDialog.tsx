@@ -150,10 +150,10 @@ export function LoadModelDialog({
         selectedModel ? (
           <div className="load-model-settings__header">
             <IconButton
-              className="load-model-settings__back"
+              className="ui-modal__close load-model-settings__back"
               icon={ArrowLeft}
               label="Back to model list"
-              size={18}
+              size={16}
               autoFocus
               onClick={() => {
                 setSelectedModel(null);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Button } from "../../components/ui/Button";
 import { Dropdown, type DropdownOption } from "../../components/ui/Dropdown";
 import { InputField } from "../../components/ui/InputField";
@@ -160,27 +160,6 @@ function ToggleRow({
   );
 }
 
-function contextSteps(max: number): number[] {
-  const steps = [256];
-  while (steps[steps.length - 1] * 2 < max) {
-    steps.push(steps[steps.length - 1] * 2);
-  }
-  if (steps[steps.length - 1] !== max) {
-    steps.push(max);
-  }
-  return steps;
-}
-
-function nearestStep(steps: number[], value: number): number {
-  return steps.reduce(
-    (nearest, current, index) =>
-      Math.abs(current - value) < Math.abs(steps[nearest] - value)
-        ? index
-        : nearest,
-    0,
-  );
-}
-
 function rangeProgressStyle(value: number, min: number, max: number): CSSProperties {
   const span = Math.max(1, max - min);
   const progress = Math.min(100, Math.max(0, ((value - min) / span) * 100));
@@ -202,7 +181,6 @@ export function LoadModelSettingsPage({
   const isDecision = model.category === "DECISION";
   const isDrafter = model.category === "Drafter";
   const contextMax = Math.max(4096, model.contextTokens ?? 0, config.contextSize ?? 0);
-  const contextOptions = useMemo(() => contextSteps(contextMax), [contextMax]);
   const gpuMax = gpuLayerMaximum(model);
   const displayedGpuLayers = normalizedGpuLayers(model, config.gpuLayers);
 
@@ -315,7 +293,7 @@ export function LoadModelSettingsPage({
               GPU <strong>{formatMemoryBytes(memoryEstimate.gpuBytes)}</strong>
             </span>
             <span>
-              Total <strong>{formatMemoryBytes(memoryEstimate.totalBytes)}</strong>
+              Total <strong>{formatMemoryBytes(memoryEstimate.modelAndKvBytes)}</strong>
             </span>
           </div>
         </div>
@@ -343,16 +321,17 @@ export function LoadModelSettingsPage({
               className="load-model-settings__range"
               aria-label="Context Length slider"
               type="range"
-              min={0}
-              max={contextOptions.length - 1}
-              value={nearestStep(contextOptions, config.contextSize ?? 4096)}
+              min={1}
+              max={contextMax}
+              step={1}
+              value={config.contextSize ?? 4096}
               style={rangeProgressStyle(
-                nearestStep(contextOptions, config.contextSize ?? 4096),
-                0,
-                contextOptions.length - 1,
+                config.contextSize ?? 4096,
+                1,
+                contextMax,
               )}
               onChange={(event) =>
-                updateNumeric("contextSize", contextOptions[Number(event.target.value)])
+                updateNumeric("contextSize", Number(event.target.value))
               }
             />
           </div>
